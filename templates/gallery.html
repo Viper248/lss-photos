@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}{{ gal.title }} | {{ SITE }}{% endblock %}
+{% block meta %}
+<meta property="og:title" content="{{ gal.title }}">
+{% if og_image %}
+<meta property="og:image" content="{{ url_for('media', path='thumb/' ~ og_image, _external=True) }}">
+<meta name="twitter:card" content="summary_large_image">
+{% endif %}
+{% endblock %}
+{% block body %}
+<main class="wrap page">
+  <a class="back" href="{{ url_for('home') }}"><svg class="i"><use href="#arrow-left"/></svg>Back to galleries</a>
+  <h1>{{ gal.title }}</h1>
+  <p class="meta">
+    {% if gal.date %}<span><svg class="i"><use href="#calendar"/></svg>{{ gal.date|nice_date }}</span>{% endif %}
+    <span><svg class="i"><use href="#images"/></svg>{{ gal.n }} photo{{ 's' if gal.n != 1 }}</span>
+  </p>
+  {% if gal.description %}<p class="desc">{{ gal.description }}</p>{% endif %}
+  <div class="bar"></div>
+
+  {% if photos %}
+  <div class="grid">
+    {% for p in photos %}
+    <a href="/media/full/{{ p.file }}" data-id="{{ p.id }}" data-name="{{ p.name }}" style="--r: {{ p.w / p.h }}">
+      <img src="/media/thumb/{{ p.file }}" width="{{ p.w }}" height="{{ p.h }}" alt="{{ gal.title }} - Photo {{ loop.index }}" loading="lazy">
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty"><svg class="i"><use href="#images"/></svg>No photos in this gallery yet</div>
+  {% endif %}
+</main>
+
+<dialog id="lb" aria-label="Photo viewer">
+  <div id="lb-bar">
+    <span id="lb-count"></span>
+    <button class="icon-btn" id="lb-share" aria-label="Share link to this photo"><svg class="i"><use href="#share"/></svg></button>
+    <a class="icon-btn" id="lb-dl" aria-label="Download full size" download><svg class="i"><use href="#download"/></svg></a>
+    <button class="icon-btn" id="lb-close" aria-label="Close"><svg class="i"><use href="#x"/></svg></button>
+  </div>
+  <button class="icon-btn" id="lb-prev" aria-label="Previous photo"><svg class="i"><use href="#chevron-left"/></svg></button>
+  <img id="lb-img" alt="">
+  <button class="icon-btn" id="lb-next" aria-label="Next photo"><svg class="i"><use href="#chevron-right"/></svg></button>
+  <div id="toast" role="status">Link copied</div>
+</dialog>
+
+<script>
+const links = [...document.querySelectorAll('.grid a')];
+const $ = id => document.getElementById(id);
+const lb = $('lb'), img = $('lb-img');
+let i = 0, x0 = 0;
+
+function show(n) {
+  i = (n + links.length) % links.length;
+  const a = links[i], thumb = a.querySelector('img'), full = new Image();
+  img.src = thumb.src;  // thumbnail is already cached: show it instantly...
+  img.alt = thumb.alt;
+  full.onload = () => { if (links[i] === a) img.src = full.src; };  // ...then swap in the full-size original
+  full.src = a.href;
+  $('lb-dl').href = a.href;
+  $('lb-dl').download = a.dataset.name;
+  $('lb-count').textContent = `${i + 1} / ${links.length}`;
+  history.replaceState(null, '', '?photo=' + a.dataset.id);
+  if (!lb.open) lb.showModal();
+}
+
+links.forEach((a, n) => a.addEventListener('click', e => { e.preventDefault(); show(n); }));
+$('lb-prev').onclick = () => show(i - 1);
+$('lb-next').onclick = () => show(i + 1);
+$('lb-close').onclick = () => lb.close();
+lb.onclick = e => { if (e.target === lb) lb.close(); };
+lb.onclose = () => history.replaceState(null, '', location.pathname);
+lb.onkeydown = e => {
+  if (e.key === 'ArrowLeft') show(i - 1);
+  if (e.key === 'ArrowRight') show(i + 1);
+};
+lb.ontouchstart = e => { x0 = e.touches[0].clientX; };
+lb.ontouchend = e => {
+  const dx = e.changedTouches[0].clientX - x0;
+  if (Math.abs(dx) > 50) show(dx < 0 ? i + 1 : i - 1);
+};
+$('lb-share').onclick = async () => {
+  if (navigator.share) return navigator.share({title: document.title, url: location.href}).catch(() => {});
+  try { await navigator.clipboard.writeText(location.href); } catch { return prompt('Copy this link:', location.href); }
+  $('toast').classList.add('on');
+  setTimeout(() => $('toast').classList.remove('on'), 2000);
+};
+
+const shared = links.findIndex(a => a.dataset.id === new URLSearchParams(location.search).get('photo'));
+if (shared >= 0) show(shared);
+</script>
+{% endblock %}

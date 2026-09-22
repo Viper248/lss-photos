@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block body %}
+<section class="hero"{% if galleries and galleries[0].cover %} style="--img: url('/media/thumb/{{ galleries[0].cover }}')"{% endif %}>
+  <h1>{{ SITE }}</h1>
+  <div class="bar"></div>
+  <svg class="i chev" aria-hidden="true"><use href="#chevron-down"/></svg>
+</section>
+
+{% for key, (eyebrow, heading, divider) in CATEGORIES.items() %}
+{% set gs = galleries | selectattr("category", "equalto", key) | list %}
+{% if divider %}<div class="wrap divider">{{ divider }}</div>{% endif %}
+<section class="wrap sec">
+  <p class="eyebrow{{ ' gold' if loop.first }}">{{ eyebrow }}</p>
+  <h2>{{ heading }}</h2>
+  {% if gs %}
+  <div class="cards">
+    {% for gal in gs %}
+    <a class="card" href="{{ url_for('gallery', gid=gal.id) }}">
+      <div class="cover">
+        {% if gal.cover %}<img src="/media/thumb/{{ gal.cover }}" alt="{{ gal.title }}" loading="lazy">{% endif %}
+        {% if gal.n %}<span class="badge"><svg class="i"><use href="#images"/></svg>{{ gal.n }}</span>{% endif %}
+      </div>
+      <h3>{{ gal.title }}</h3>
+      {% if gal.date %}<p class="meta"><span><svg class="i"><use href="#calendar"/></svg>{{ gal.date|nice_date }}</span></p>{% endif %}
+      {% if gal.description %}<p class="desc">{{ gal.description }}</p>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty"><svg class="i"><use href="#camera"/></svg><b>No galleries yet</b>Photo galleries will appear here</div>
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}

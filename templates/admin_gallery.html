@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ gal.title }} | {{ SITE }}{% endblock %}
+{% block body %}
+<main class="wrap page">
+  <a class="back" href="{{ url_for('admin') }}"><svg class="i"><use href="#arrow-left"/></svg>All galleries</a>
+  <h1>{{ gal.title }}</h1>
+  <p class="meta">
+    <a class="link" href="{{ url_for('gallery', gid=gal.id) }}">View gallery</a>
+    <a class="link" href="{{ url_for('admin', g=gal.id) }}">Upload more photos</a>
+    <span>{{ gal.n }} photos</span>
+  </p>
+  <div class="bar"></div>
+
+  <form class="form" method="post">
+    <label>Title <input name="title" value="{{ gal.title }}" required></label>
+    <label>Category
+      <select name="category">{% for key, c in CATEGORIES.items() %}<option value="{{ key }}"{{ ' selected' if key == gal.category }}>{{ c[1] }}</option>{% endfor %}</select>
+    </label>
+    <label>Date <input type="date" name="date" value="{{ gal.date }}"></label>
+    <label>Description <textarea name="description" rows="2">{{ gal.description }}</textarea></label>
+    <div class="row">
+      <button class="btn">Save</button>
+      <button class="btn ghost" name="action" value="delete" onclick="return confirm('Delete this gallery and all its photos?')">Delete gallery</button>
+    </div>
+  </form>
+
+  <div class="tiles">
+    {% for p in photos %}
+    <form class="tile" method="post" action="{{ url_for('admin_photo', pid=p.id) }}">
+      <img src="/media/thumb/{{ p.file }}" alt="{{ p.name }}" loading="lazy">
+      {% if p.file == gal.cover %}<span class="badge">Cover</span>{% endif %}
+      <button name="action" value="cover">Set cover</button>
+      <button name="action" value="delete" onclick="return confirm('Delete this photo?')">Delete</button>
+    </form>
+    {% endfor %}
+  </div>
+</main>
+{% endblock %}

@@ -1,0 +1,3 @@
+flask>=3
+pillow>=10
+waitress>=3

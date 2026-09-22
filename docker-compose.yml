@@ -1,0 +1,22 @@
+# Run from this folder on the ZimaBlade (see README): `docker compose up -d`
+# Secrets come from a .env file next to this one (not in git): ADMIN_PASSWORD, TUNNEL_TOKEN.
+services:
+  gallery:
+    image: python:3.12-slim
+    working_dir: /app
+    # trusted-proxy flags: links built behind the tunnel say https://
+    command: sh -c "pip install -q -r requirements.txt && waitress-serve --port=8080 --trusted-proxy='*' --trusted-proxy-headers=x-forwarded-proto app:app"
+    environment:
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}"
+    volumes:
+      - .:/app  # this folder; photos + database go in its data/ subfolder
+    ports:
+      - "8080:8080"  # on your network: http://<zimablade-ip>:8080
+    restart: unless-stopped
+
+  tunnel:  # public https://your-domain without opening router ports
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN}"
+    restart: unless-stopped
