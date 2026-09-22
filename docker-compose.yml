@@ -14,7 +14,7 @@ services:
       - "8080:8080"  # on your network: http://<zimablade-ip>:8080
     restart: unless-stopped
 
-  tunnel:  # public https://your-domain without opening router ports
+  tunnel:  # public https://lss.photos without opening router ports
     image: cloudflare/cloudflared:latest
     command: tunnel --no-autoupdate run
     environment:
