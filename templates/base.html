@@ -24,7 +24,7 @@
   <symbol id="share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98M15.41 6.51l-6.82 3.98"/></symbol>
 </svg>
 <nav class="nav"><div class="wrap">
-  <a class="brand" href="{{ url_for('home') }}"><span class="logo">{{ SITE[0] }}</span><span><b>{{ SITE }}</b><small>{{ TAGLINE }}</small></span></a>
+  <a class="brand" href="{{ url_for('home') }}"><span class="logo"><svg viewBox="312 295 378 411" aria-hidden="true"><path fill="currentColor" d="M312 295h122v289h170v-102h86v224H397v-66h37v29h219V519h-49v102H312zM349 331v253h48V331z"/></svg></span><span><b>{{ SITE }}</b><small>{{ TAGLINE }}</small></span></a>
   <a class="nav-btn" href="{{ url_for('admin') }}"><svg class="i" aria-hidden="true"><use href="#camera"/></svg>Admin</a>
 </div></nav>
 {% block body %}{% endblock %}

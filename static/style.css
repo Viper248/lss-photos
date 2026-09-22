@@ -27,6 +27,7 @@ img { display: block; max-width: 100%; }
 .nav .wrap { display: flex; align-items: center; justify-content: space-between; padding-block: 16px; color: var(--muted); }
 .brand { display: flex; align-items: center; gap: 12px; }
 .logo { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: #000; border: 1px solid var(--line); font: 700 18px var(--serif); color: var(--fg); }
+.logo svg { width: 20px; height: 22px; }
 .brand b { display: block; font: 600 20px/1.2 var(--serif); letter-spacing: .5px; color: var(--fg); transition: color .2s; }
 .brand:hover b { color: var(--gold); }
 .nav-btn { display: flex; align-items: center; gap: 8px; padding: 6px 14px; border: 1px solid var(--line); border-radius: 99px; font-size: 13px; transition: color .2s, border-color .2s; }

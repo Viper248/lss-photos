@@ -10,7 +10,7 @@ from pathlib import Path
 from flask import Flask, abort, g, redirect, render_template, request, send_from_directory, url_for
 from PIL import Image, ImageOps
 
-SITE, TAGLINE = "L&S Shots", "Sports Photography"
+SITE, TAGLINE = "LSS Photos", "Photography"
 CATEGORIES = {  # key: (eyebrow, heading, divider label above the section)
     "sports": ("Portfolio", "Sports Galleries", ""),
     "other": ("Beyond the field", "Other Galleries", "Other Photography"),

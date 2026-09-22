@@ -1,4 +1,4 @@
-# L&S Shots photo galleries (lss.photos)
+# LSS Photos photo galleries (lss.photos)
 
 Public photo galleries (thumbnail grid, full-size viewer with download and share links) plus a
 password-protected `/admin` for uploading. Flask + SQLite + Pillow, served by waitress.
