@@ -201,6 +201,10 @@ assert "Pat Parent" in admin_page and "mailto:pat@example.com" in admin_page and
 sam.post("/admin/bookings", data={"id": booking_id, "action": "accept", "reply": "See you on the home sideline"})
 status = text(visitor.get(status_url))
 assert "Accepted: LSS Photos will be there" in status and "See you on the home sideline" in status
+same_day = db.execute("select id from games where site = 'Staples - Field'").fetchone()[0]
+warning = text(visitor.get(f"/calendar/game/{same_day}"))
+assert "already booked for another game that day" in warning and "Greenwich at Norwalk" in warning
+assert "already booked for another game" not in text(visitor.get(f"/calendar/game/{game_id}"))  # not about itself
 only_lss = text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}&f=1&layer=lss"))
 assert "Greenwich at Norwalk" in only_lss and "LSS Photos will be there" in only_lss and "Norwalk at Staples" not in only_lss
 assert "will be there" not in text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}&f=1&layer=fciac"))  # schedule layer alone

@@ -24,7 +24,7 @@ img { display: block; max-width: 100%; }
 
 /* nav + footer */
 .nav { position: fixed; inset: 0 0 auto; z-index: 50; background: rgb(10 10 10 / .8); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border-bottom: 1px solid rgb(36 36 36 / .5); }
-.nav .wrap { display: flex; align-items: center; justify-content: space-between; padding-block: 16px; color: var(--muted); }
+.nav .wrap { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 16px; color: var(--muted); }
 .brand { display: flex; align-items: center; gap: 12px; }
 .logo { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: 50%; background: #000; border: 1px solid var(--line); font: 700 18px var(--serif); color: var(--fg); }
 .logo svg { width: 22px; height: 24px; }
@@ -224,6 +224,9 @@ button.link { padding: 0; border: 0; background: none; color: inherit; font: inh
 .ok-s { background: var(--gold); color: var(--bg); }
 .ask-s { border: 1px solid var(--gold); color: var(--gold); }
 .hp { position: absolute; left: -9999px; }
+.flash.warn { border-left-color: #e8715f; }
+.flash.warn b { display: block; margin-bottom: 6px; color: var(--fg); font-weight: 500; }
+.flash.warn ul { margin: 0 0 6px; padding-left: 18px; color: var(--muted); }
 .reply { margin: 0 0 24px; padding: 16px 20px; border-left: 2px solid var(--gold); background: var(--card); border-radius: 4px; }
 .reply small { display: block; margin-bottom: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .15em; color: var(--gold); }
 h1.status-accepted { color: var(--gold); }
@@ -235,6 +238,12 @@ h1.status-declined, h1.status-canceled { color: var(--muted); }
 @media (max-width: 900px) { .cal { grid-template-columns: 1fr; } }
 @media (max-width: 640px) {
   .nav-btn { padding: 6px 10px; }
+  .nav-btn .i { display: none; }  /* room for the brand next to both buttons */
+}
+@media (max-width: 400px) {
+  .wrap { padding-inline: 16px; }
+  .nav-btn { padding: 6px 9px; }
+  .nav-links { gap: 6px; }
   .game { grid-template-columns: 60px minmax(0, 1fr); }
   .game .btn { grid-column: 1 / -1; justify-self: start; }
   .daycell { padding: 4px 5px; aspect-ratio: auto; min-height: 48px; }

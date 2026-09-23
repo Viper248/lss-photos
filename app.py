@@ -278,7 +278,10 @@ def book_game(game_id):
             q("insert into bookings (game_id, token, name, email, phone, note, ip, created) values (?, ?, ?, ?, ?, ?, ?, ?)",
               game_id, token, name[:100], email[:200], phone[:40], form.get("note", "").strip()[:1000], ip, now())
             return redirect(url_for("booking_status", token=token))
-    return render_template("book.html", gm=gm, open_for_requests=open_for_requests, form=form, error=error), 400 if error else 200
+    busy = q("""select * from games g where g.date = ? and g.id != ? and not g.gone and exists
+        (select 1 from bookings where game_id = g.id and status = 'accepted') order by g.sort""", gm["date"], game_id)
+    return render_template("book.html", gm=gm, open_for_requests=open_for_requests, form=form, error=error,
+                           busy=busy.fetchall()), 400 if error else 200
 
 
 @app.route("/booking/<token>", methods=["GET", "POST"])

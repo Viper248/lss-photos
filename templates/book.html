@@ -17,6 +17,13 @@
   {% if not open_for_requests %}
   <p class="flash">This game {{ 'was ' ~ gm.time|lower if called_off(gm.time) else 'has already been played' }}, so it can't be booked.</p>
   {% else %}
+  {% if busy %}
+  <div class="flash warn" role="note">
+    <b>Heads up: {{ SITE }} is already booked for another game that day.</b>
+    <ul>{% for other in busy %}<li>{{ other.time }} · {{ other.sport }}, {{ other|matchup }} ({{ other.site }})</li>{% endfor %}</ul>
+    You can still send a request, but {{ SITE }} may not be able to make both.
+  </div>
+  {% endif %}
   {% if error %}<p class="flash" role="alert">{{ error }}</p>{% endif %}
   <form class="form" method="post">
     <label>Your name <input name="name" value="{{ form.get('name', '') }}" autocomplete="name" maxlength="100" required></label>
