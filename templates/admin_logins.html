@@ -1,0 +1,23 @@
+{% extends "admin_base.html" %}
+{% block title %}Login history | Admin | {{ SITE }}{% endblock %}
+{% block admin %}
+<h1>Login history</h1>
+<p class="meta"><span>Every admin login attempt, newest first (last 300)</span>
+  <span{% if failed %} class="gold"{% endif %}>{{ failed }} failed in the last 24 hours</span></p>
+<div class="bar"></div>
+
+<table class="table">
+  <tr><th>When</th><th>Username</th><th>Result</th><th class="hide-sm">IP address</th><th class="hide-sm">Device</th></tr>
+  {% for l in logins %}
+  <tr>
+    <td><time datetime="{{ l.at }}">{{ l.at[:16]|replace('T', ' ') }} UTC</time></td>
+    <td class="fg">{{ l.username or '(blank)' }}</td>
+    <td>{% if l.ok %}<span class="ok">Logged in</span>{% else %}<span class="bad">Wrong password or username</span>{% endif %}</td>
+    <td class="hide-sm">{{ l.ip }}</td>
+    <td class="hide-sm" title="{{ l.agent }}">{{ l.agent|device }}</td>
+  </tr>
+  {% else %}
+  <tr><td>No logins yet.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

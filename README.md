@@ -1,15 +1,27 @@
 # LSS Photos photo galleries (lss.photos)
 
-Public photo galleries (thumbnail grid, full-size viewer with download and share links) plus a
-password-protected `/admin` for uploading. Flask + SQLite + Pillow, served by waitress.
-Photos and the database live in `data/`, which is not in git. Back that folder up.
+Public photo galleries (thumbnail grid, full-size viewer with download and share links) plus an
+`/admin` with its own accounts. Flask + SQLite + Pillow, served by waitress.
+Photos, the database and the login-cookie key live in `data/`, which is not in git. Back that folder up.
+
+**Admin** (log in at `/admin`):
+- **Galleries**: every gallery, grouped by section, with edit / add photos / view / delete
+- **Upload**: new gallery or more photos for an existing one
+- **Sections**: add, rename, reorder and delete the home-page headings (Sports Galleries, My Adventures…)
+  and their subsections (Baseball, Field Hockey…). Visitors filter a heading's galleries by subsection.
+  A section can only be deleted once it's empty.
+- **Links**: email, phone, Instagram, Facebook, TikTok, YouTube, X, website; shown as icons in the footer
+- **Accounts**: each person gets their own username and password; anyone logged in can add accounts,
+  set someone's password (signs them out) or change their own
+- **Login history**: every login attempt with time, username, IP and device. After 10 failed attempts
+  from one IP in 15 minutes, that IP can't log in for a while.
 
 ## Run locally
 
 ```sh
 python -m venv .venv
 .venv/Scripts/pip install -r requirements.txt           # macOS/Linux: .venv/bin/pip
-ADMIN_PASSWORD=pick-one .venv/Scripts/python app.py     # http://localhost:5000, admin at /admin (any username)
+ADMIN_PASSWORD=pick-one .venv/Scripts/python app.py     # http://localhost:5000, admin at /admin (username admin)
 .venv/Scripts/python test_app.py                        # smoke test, prints "ok"
 ```
 
@@ -45,7 +57,7 @@ tunnel token.
    ```
 3. **Create `.env`** in that folder on the Blade, then `chmod 600 .env`:
    ```
-   ADMIN_PASSWORD=<admin password from the owner>
+   ADMIN_PASSWORD=<first admin password from the owner>
    TUNNEL_TOKEN=<token from step A2>
    ```
 4. **Start** (in that folder): `docker compose up -d`.
@@ -55,12 +67,20 @@ tunnel token.
 5. **Check:**
    - `docker compose ps` shows both containers running; `curl -sI localhost:8080` returns 200
    - `docker compose logs tunnel` shows "Registered tunnel connection"
-   - https://lss.photos loads, and https://lss.photos/admin asks for a login (any username + `ADMIN_PASSWORD`)
+   - https://lss.photos loads, and https://lss.photos/admin asks for a login: username `admin`, password `ADMIN_PASSWORD`.
+     That creates the first account only. Afterwards passwords are managed in Admin → Accounts,
+     and changing `ADMIN_PASSWORD` does nothing.
 
 **Update to the latest code:** repeat B2 (it leaves `data/` and `.env` alone), then `docker compose restart gallery`.
 
 ### Good to know
 
+- **Upgrading from the version without accounts:** the first start after updating creates the `admin`
+  account from `ADMIN_PASSWORD` and puts existing galleries under their old headings. Move sports
+  galleries into Baseball / Field Hockey from each gallery's Edit page.
+- **Locked out of every account?** In the site's folder on the Blade, run
+  `docker compose exec gallery python -c "import sqlite3; c = sqlite3.connect('data/gallery.db'); c.execute('delete from users'); c.commit()"`
+  then `docker compose restart gallery`. `admin` / `ADMIN_PASSWORD` works again (galleries are untouched).
 - **Back up `data/`** (photos + `gallery.db`). That folder is the whole site's content.
 - **502 from Cloudflare** means the `gallery` container isn't running, or the hostname's service isn't `HTTP` → `gallery:8080`.
 - **Deleted photos** can stay in Cloudflare's cache for a while. To remove one right away: Caching → Purge Cache → its URL.

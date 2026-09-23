@@ -6,22 +6,33 @@
   <svg class="i chev" aria-hidden="true"><use href="#chevron-down"/></svg>
 </section>
 
-{% for key, (eyebrow, heading, divider) in CATEGORIES.items() %}
-{% set gs = galleries | selectattr("category", "equalto", key) | list %}
-{% if divider %}<div class="wrap divider">{{ divider }}</div>{% endif %}
-<section class="wrap sec">
-  <p class="eyebrow{{ ' gold' if loop.first }}">{{ eyebrow }}</p>
-  <h2>{{ heading }}</h2>
+{% for s in sections %}
+{% set gs = galleries | selectattr("top_id", "equalto", s.id) | list %}
+{% set used = gs | map(attribute="sub_id") | list %}
+{% set subs = s.subs | selectattr("id", "in", used) | list %}
+{% if s.divider %}<div class="wrap divider">{{ s.divider }}</div>{% endif %}
+<section class="wrap sec" id="s{{ s.id }}">
+  {% if s.eyebrow %}<p class="eyebrow{{ ' gold' if loop.first }}">{{ s.eyebrow }}</p>{% endif %}
+  <h2>{{ s.name }}</h2>
+  {% if subs %}
+  <div class="pills" role="group" aria-label="Show {{ s.name }}">
+    <button type="button" aria-pressed="true">All</button>
+    {% for sub in subs %}<button type="button" aria-pressed="false" data-sub="{{ sub.id }}">{{ sub.name }}</button>{% endfor %}
+  </div>
+  {% endif %}
   {% if gs %}
   <div class="cards">
     {% for gal in gs %}
-    <a class="card" href="{{ url_for('gallery', gid=gal.id) }}">
+    <a class="card" href="{{ url_for('gallery', gid=gal.id) }}" data-sub="{{ gal.sub_id or '' }}">
       <div class="cover">
         {% if gal.cover %}<img src="/media/thumb/{{ gal.cover }}" alt="{{ gal.title }}" loading="lazy">{% endif %}
         {% if gal.n %}<span class="badge"><svg class="i"><use href="#images"/></svg>{{ gal.n }}</span>{% endif %}
       </div>
       <h3>{{ gal.title }}</h3>
-      {% if gal.date %}<p class="meta"><span><svg class="i"><use href="#calendar"/></svg>{{ gal.date|nice_date }}</span></p>{% endif %}
+      {% if gal.date or gal.sub %}<p class="meta">
+        {% if gal.sub %}<span class="tag">{{ gal.sub }}</span>{% endif %}
+        {% if gal.date %}<span><svg class="i"><use href="#calendar"/></svg>{{ gal.date|nice_date }}</span>{% endif %}
+      </p>{% endif %}
       {% if gal.description %}<p class="desc">{{ gal.description }}</p>{% endif %}
     </a>
     {% endfor %}
@@ -31,4 +42,13 @@
   {% endif %}
 </section>
 {% endfor %}
+
+<script>
+document.querySelectorAll('.pills').forEach(pills => pills.onclick = e => {  // filter a section's cards by subsection
+  const b = e.target.closest('button');
+  if (!b) return;
+  pills.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  pills.parentNode.querySelectorAll('.card').forEach(c => { c.hidden = b.dataset.sub && c.dataset.sub !== b.dataset.sub; });
+});
+</script>
 {% endblock %}

@@ -1,0 +1,18 @@
+{% extends "admin_base.html" %}
+{% block title %}Links | Admin | {{ SITE }}{% endblock %}
+{% block admin %}
+<h1>Contact &amp; social links</h1>
+<p class="desc">Filled-in links show as icons in the footer of every page. Leave a box empty to hide it.
+  For Instagram and the like, a handle (@yourname) or a full link both work.</p>
+<div class="bar"></div>
+
+<form class="form" method="post">
+  {% for key, (label, placeholder, _) in LINKS.items() %}
+  <label><span class="with-icon"><svg class="i"><use href="#s-{{ key }}"/></svg>{{ label }}</span>
+    <input name="{{ key }}" value="{{ values.get(key, '') }}" placeholder="{{ placeholder }}"
+           {% if key == 'email' %}type="email" autocomplete="email"{% elif key == 'phone' %}type="tel"{% else %}autocapitalize="none"{% endif %}>
+  </label>
+  {% endfor %}
+  <div class="row"><button class="btn">Save links</button></div>
+</form>
+{% endblock %}

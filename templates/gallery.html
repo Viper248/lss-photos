@@ -12,6 +12,7 @@
   <a class="back" href="{{ url_for('home') }}"><svg class="i"><use href="#arrow-left"/></svg>Back to galleries</a>
   <h1>{{ gal.title }}</h1>
   <p class="meta">
+    {% if gal.section %}<span><a class="link" href="{{ url_for('home') }}#s{{ gal.top_id }}">{{ gal.section }}</a>{% if gal.sub %} › {{ gal.sub }}{% endif %}</span>{% endif %}
     {% if gal.date %}<span><svg class="i"><use href="#calendar"/></svg>{{ gal.date|nice_date }}</span>{% endif %}
     <span><svg class="i"><use href="#images"/></svg>{{ gal.n }} photo{{ 's' if gal.n != 1 }}</span>
   </p>

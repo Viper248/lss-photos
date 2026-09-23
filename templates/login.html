@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Log in | {{ SITE }}{% endblock %}
+{% block body %}
+<main class="wrap page login">
+  <p class="eyebrow gold">Admin</p>
+  <h1>Log in</h1>
+  <div class="bar"></div>
+  {% if error %}<p class="flash" role="alert">{{ error }}</p>{% endif %}
+  <form class="form" method="post">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label>Username <input name="username" value="{{ username }}" autocomplete="username" autocapitalize="none" required autofocus></label>
+    <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
+    <div class="row"><button class="btn">Log in</button></div>
+  </form>
+</main>
+{% endblock %}

@@ -1,0 +1,6 @@
+{% macro section_options(sections, selected=none) %}
+{% for s in sections %}
+<option value="{{ s.id }}"{{ ' selected' if s.id == selected }}>{{ s.name }}</option>
+{% for sub in s.subs %}<option value="{{ sub.id }}"{{ ' selected' if sub.id == selected }}>{{ s.name }} › {{ sub.name }}</option>{% endfor %}
+{% endfor %}
+{% endmacro %}

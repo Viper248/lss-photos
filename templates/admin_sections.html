@@ -1,0 +1,49 @@
+{% extends "admin_base.html" %}
+{% block title %}Sections | Admin | {{ SITE }}{% endblock %}
+{% macro controls(s) %}
+<input type="hidden" name="id" value="{{ s.id }}">
+<button class="btn" name="action" value="save">Save</button>
+<button class="icon-btn" name="action" value="up" formnovalidate aria-label="Move {{ s.name }} up" title="Move up"><svg class="i"><use href="#up"/></svg></button>
+<button class="icon-btn" name="action" value="down" formnovalidate aria-label="Move {{ s.name }} down" title="Move down"><svg class="i"><use href="#chevron-down"/></svg></button>
+<button class="btn ghost" name="action" value="delete" formnovalidate data-confirm="Delete {{ s.name }}?">Delete</button>
+{% endmacro %}
+{% block admin %}
+<h1>Sections</h1>
+<p class="desc">These are the headings on the home page, in order, like Sports Galleries and My Adventures.
+  Give a heading subsections (Baseball, Field Hockey…) and visitors can filter its galleries by them.
+  Pick a gallery's section on its Edit page.</p>
+<div class="bar"></div>
+
+{% for s in sections %}
+<section class="panel">
+  <form class="inline" method="post">
+    <label class="grow">Heading <input name="name" value="{{ s.name }}" required></label>
+    <label>Small text above <input name="eyebrow" value="{{ s.eyebrow }}" placeholder="Portfolio"></label>
+    <label>Divider line above <input name="divider" value="{{ s.divider }}" placeholder="optional"></label>
+    <div class="row">{{ controls(s) }}</div>
+  </form>
+
+  <div class="subs">
+    {% for sub in s.subs %}
+    <form class="inline" method="post">
+      <label class="grow">Subsection <input name="name" value="{{ sub.name }}" required></label>
+      <div class="row">{{ controls(sub) }}</div>
+    </form>
+    {% endfor %}
+    <form class="inline" method="post">
+      <input type="hidden" name="parent_id" value="{{ s.id }}">
+      <label class="grow">New subsection of {{ s.name }} <input name="name" placeholder="{{ 'Soccer' if loop.first else 'Name' }}" required></label>
+      <div class="row"><button class="btn ghost" name="action" value="add">Add subsection</button></div>
+    </form>
+  </div>
+</section>
+{% endfor %}
+
+<h2 class="sub">Add a heading</h2>
+<form class="inline panel" method="post">
+  <label class="grow">Heading <input name="name" placeholder="Senior Portraits" required></label>
+  <label>Small text above <input name="eyebrow" placeholder="Class of 2027"></label>
+  <label>Divider line above <input name="divider" placeholder="optional"></label>
+  <div class="row"><button class="btn" name="action" value="add">Add heading</button></div>
+</form>
+{% endblock %}

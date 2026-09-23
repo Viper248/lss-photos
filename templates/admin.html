@@ -1,62 +1,50 @@
-{% extends "base.html" %}
-{% block title %}Admin | {{ SITE }}{% endblock %}
-{% block body %}
-<main class="wrap page">
-  <p class="eyebrow gold">Admin</p>
-  <h1>Upload photos</h1>
-  <div class="bar"></div>
+{% extends "admin_base.html" %}
+{% block title %}Galleries | Admin | {{ SITE }}{% endblock %}
+{% block admin %}
+<h1>Galleries</h1>
+<p class="meta"><span>{{ galleries|length }} galler{{ 'y' if galleries|length == 1 else 'ies' }}</span><span>{{ photos }} photo{{ 's' if photos != 1 }}</span>
+  <a class="link gold" href="{{ url_for('upload_page') }}">+ New gallery</a></p>
+<div class="bar"></div>
 
-  <form id="up" class="form" action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data">
-    <label>Gallery
-      <select name="gallery_id">
-        <option value="">+ New gallery</option>
-        {% for gal in galleries %}<option value="{{ gal.id }}"{{ ' selected' if gal.id == selected }}>{{ gal.title }}</option>{% endfor %}
-      </select>
-    </label>
-    <div class="new">
-      <label>Title <input name="title" placeholder="Field Hockey vs. Greenwich"></label>
-      <label>Category
-        <select name="category">{% for key, c in CATEGORIES.items() %}<option value="{{ key }}">{{ c[1] }}</option>{% endfor %}</select>
-      </label>
-      <label>Date <input type="date" name="date" value="{{ today() }}"></label>
-      <label>Description <textarea name="description" rows="2"></textarea></label>
-    </div>
-    <label>Photos <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" multiple required></label>
-    <div class="row"><button class="btn">Upload</button><span id="msg" role="status"></span></div>
-  </form>
+{% set placed = namespace(ids=[]) %}
+{% for s in sections %}
+<h2 class="sub">{{ s.name }}</h2>
+{% for group in [s] + s.subs %}
+{% set gs = galleries | selectattr("section_id", "equalto", group.id) | list %}
+{% set placed.ids = placed.ids + gs | map(attribute="id") | list %}
+{% if group is not sameas s %}<h3 class="subsub">{{ group.name }}</h3>{% endif %}
+{% if gs %}
+<table class="table galleries">
+  {% for gal in gs %}
+  <tr>
+    <td class="thumb">{% if gal.cover %}<img src="/media/thumb/{{ gal.cover }}" alt="">{% endif %}</td>
+    <td><a class="link" href="{{ url_for('admin_gallery', gid=gal.id) }}">{{ gal.title }}</a></td>
+    <td class="hide-sm">{{ gal.date|nice_date if gal.date }}</td>
+    <td class="hide-sm">{{ gal.n }} photo{{ 's' if gal.n != 1 }}</td>
+    <td class="actions">
+      <a class="link" href="{{ url_for('admin_gallery', gid=gal.id) }}">Edit</a>
+      <a class="link" href="{{ url_for('upload_page', g=gal.id) }}">Add photos</a>
+      <a class="link" href="{{ url_for('gallery', gid=gal.id) }}">View</a>
+      <form method="post" action="{{ url_for('admin_gallery', gid=gal.id) }}">
+        <button class="link" name="action" value="delete" data-confirm="Delete {{ gal.title }} and all {{ gal.n }} photos?">Delete</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% elif group is not sameas s or not s.subs %}
+<p class="none">No galleries yet.</p>
+{% endif %}
+{% endfor %}
+{% endfor %}
 
-  <h2 class="sub">Galleries</h2>
-  <table class="table">
-    {% for gal in galleries %}
-    <tr>
-      <td>{% if gal.cover %}<img src="/media/thumb/{{ gal.cover }}" alt="">{% endif %}</td>
-      <td><a class="link" href="{{ url_for('admin_gallery', gid=gal.id) }}">{{ gal.title }}</a></td>
-      <td>{{ gal.category|title }}</td>
-      <td>{{ gal.date|nice_date if gal.date }}</td>
-      <td>{{ gal.n }} photos</td>
-    </tr>
-    {% else %}
-    <tr><td>No galleries yet.</td></tr>
-    {% endfor %}
-  </table>
-</main>
-
-<script>
-const up = document.getElementById('up'), msg = document.getElementById('msg');
-up.onsubmit = async e => {
-  e.preventDefault();
-  const fd = new FormData(up), files = fd.getAll('photo'), failed = [];
-  if (!fd.get('gallery_id') && !fd.get('title').trim()) return alert('Give the new gallery a title.');
-  up.querySelector('button').disabled = true;
-  for (const [n, file] of files.entries()) {  // one request per photo: progress, and no giant uploads
-    msg.textContent = `Uploading ${n + 1} of ${files.length}…`;
-    fd.set('photo', file);
-    const r = await fetch(up.action, {method: 'POST', body: fd}).catch(() => null);
-    if (r && r.ok) fd.set('gallery_id', (await r.json()).gallery_id);
-    else failed.push(r ? await r.text() : `${file.name}: network error`);
-  }
-  if (failed.length) alert('Some photos were not uploaded:\n\n' + failed.join('\n'));
-  location = fd.get('gallery_id') ? '/admin/g/' + fd.get('gallery_id') : '/admin';
-};
-</script>
+{% set lost = galleries | rejectattr("id", "in", placed.ids) | list %}
+{% if lost %}
+<h2 class="sub">No section</h2>
+<table class="table">
+  {% for gal in lost %}
+  <tr><td><a class="link" href="{{ url_for('admin_gallery', gid=gal.id) }}">{{ gal.title }}</a></td><td>Edit it to pick a section</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
 {% endblock %}

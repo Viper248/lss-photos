@@ -1,5 +1,5 @@
 # Run from this folder on the ZimaBlade (see README): `docker compose up -d`
-# Secrets come from a .env file next to this one (not in git): ADMIN_PASSWORD, TUNNEL_TOKEN.
+# Secrets come from a .env file next to this one (not in git): ADMIN_PASSWORD (first login only), TUNNEL_TOKEN.
 services:
   gallery:
     image: python:3.12-slim

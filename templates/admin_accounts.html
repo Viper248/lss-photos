@@ -1,0 +1,55 @@
+{% extends "admin_base.html" %}
+{% block title %}Accounts | Admin | {{ SITE }}{% endblock %}
+{% block admin %}
+<h1>Accounts</h1>
+<p class="desc">Everyone who can log in to the admin, each with their own password. Every account can do everything here.
+  Each login is recorded in <a class="link gold" href="{{ url_for('admin_logins') }}">Login history</a>.</p>
+<div class="bar"></div>
+
+<table class="table">
+  <tr><th>Username</th><th class="hide-sm">Added</th><th>Last login</th><th></th></tr>
+  {% for u in users %}
+  <tr>
+    <td><b class="fg">{{ u.username }}</b>{% if u.id == g.user.id %} (you){% endif %}</td>
+    <td class="hide-sm"><time datetime="{{ u.created }}">{{ u.created[:10] }}</time></td>
+    <td>{% if u.last %}<time datetime="{{ u.last }}">{{ u.last[:10] }}</time>{% else %}Never{% endif %}</td>
+    <td class="actions">
+      {% if u.id != g.user.id %}
+      <details>
+        <summary class="link">Set password</summary>
+        <form class="inline" method="post">
+          <input type="hidden" name="id" value="{{ u.id }}">
+          <input type="password" name="password" placeholder="New password" aria-label="New password for {{ u.username }}" autocomplete="new-password" minlength="8" required>
+          <input type="password" name="confirm" placeholder="Again" aria-label="Repeat new password" autocomplete="new-password" minlength="8" required>
+          <button class="btn" name="action" value="reset">Set</button>
+        </form>
+      </details>
+      <form method="post">
+        <input type="hidden" name="id" value="{{ u.id }}">
+        <button class="link" name="action" value="delete" data-confirm="Delete the account {{ u.username }}? They won't be able to log in.">Delete</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+
+<div class="cols">
+  <form class="form panel" method="post">
+    <h2>Add an account</h2>
+    <label>Username <input name="username" autocomplete="off" autocapitalize="none" required></label>
+    <label>Password <input type="password" name="password" autocomplete="new-password" minlength="8" required></label>
+    <label>Password again <input type="password" name="confirm" autocomplete="new-password" minlength="8" required></label>
+    <div class="row"><button class="btn" name="action" value="add">Add account</button></div>
+  </form>
+
+  <form class="form panel" method="post">
+    <h2>Change my password</h2>
+    <input type="text" name="username" value="{{ g.user.username }}" autocomplete="username" hidden>
+    <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
+    <label>New password <input type="password" name="password" autocomplete="new-password" minlength="8" required></label>
+    <label>New password again <input type="password" name="confirm" autocomplete="new-password" minlength="8" required></label>
+    <div class="row"><button class="btn" name="action" value="mine">Change password</button></div>
+  </form>
+</div>
+{% endblock %}

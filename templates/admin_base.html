@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block body %}
+<main class="wrap page">
+  <div class="admin-top">
+    <nav class="tabs" aria-label="Admin">
+      {% for endpoint, label in [('admin', 'Galleries'), ('upload_page', 'Upload'), ('admin_sections', 'Sections'),
+                                 ('admin_links', 'Links'), ('admin_accounts', 'Accounts'), ('admin_logins', 'Login history')] %}
+      <a href="{{ url_for(endpoint) }}"{% if request.endpoint == endpoint or (endpoint == 'admin' and request.endpoint == 'admin_gallery') %} aria-current="page"{% endif %}>{{ label }}</a>
+      {% endfor %}
+    </nav>
+    <form class="who" method="post" action="{{ url_for('logout') }}">
+      Signed in as <b>{{ g.user.username }}</b> <button class="link">Log out</button>
+    </form>
+  </div>
+  {% for m in get_flashed_messages() %}<p class="flash" role="status">{{ m }}</p>{% endfor %}
+  {% block admin %}{% endblock %}
+</main>
+<script>
+document.addEventListener('click', e => {  // buttons with data-confirm ask first
+  const b = e.target.closest('[data-confirm]');
+  if (b && !confirm(b.dataset.confirm)) e.preventDefault();
+});
+document.querySelectorAll('time[datetime]').forEach(t => {  // UTC from the server, shown in the viewer's time zone
+  t.textContent = new Date(t.dateTime).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'});
+});
+</script>
+{% block script %}{% endblock %}
+{% endblock %}
