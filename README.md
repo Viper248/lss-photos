@@ -1,4 +1,4 @@
-# LSS Photos photo galleries (lss.photos)
+# LSS Photos photo galleries
 
 Public photo galleries (thumbnail grid, full-size viewer with download and share links) plus an
 `/admin` with its own accounts. Flask + SQLite + Pillow, served by waitress.
@@ -37,26 +37,27 @@ ADMIN_PASSWORD=pick-one .venv/Scripts/python app.py     # http://localhost:5000,
 .venv/Scripts/python test_app.py                        # smoke test, prints "ok"
 ```
 
-## Deploy: ZimaBlade + https://lss.photos
+## Deploy: ZimaBlade + your own domain
 
 `docker-compose.yml` runs two containers on the ZimaBlade: the site (waitress, port 8080) and a
-Cloudflare Tunnel that serves it at `https://lss.photos` without opening any router ports.
+Cloudflare Tunnel that serves it at `https://<your-domain>` without opening any router ports
+(`<your-domain>` below means whatever domain you own; the live site runs on `lss.photos`).
 Part A needs the owner's Cloudflare account. Part B is done over SSH (by the owner, or a Claude Code
 instance that can SSH into the Blade); it needs two values from the owner: the admin password and the
 tunnel token.
 
 ### A. Cloudflare (owner, once)
 
-1. **Buy `lss.photos` on Cloudflare** (dashboard → Domain Registration → Register Domains). Cloudflare
-   sells `.photos` at cost and sets up DNS itself. Bought it elsewhere? Add it to Cloudflare on the Free
-   plan and change the registrar's nameservers to the two Cloudflare gives you.
+1. **Get a domain on Cloudflare** (dashboard → Domain Registration → Register Domains). Cloudflare
+   sells domains at cost and sets up DNS itself. Already own one elsewhere? Add it to Cloudflare on the
+   Free plan and change the registrar's nameservers to the two Cloudflare gives you.
 2. **Create a tunnel:** Zero Trust dashboard (one.dash.cloudflare.com) → Networks → Tunnels
-   (newer UI: Connectors) → Create a tunnel → Cloudflared → name it `lss-photos`. Copy the token: the
+   (newer UI: Connectors) → Create a tunnel → Cloudflared → name it anything. Copy the token: the
    long string after `--token` in the install command it shows. Don't run that command; the compose
    file runs cloudflared.
 3. **Route the domain to the site:** in the tunnel, add a public hostname (newer UI: published
-   application route): hostname `lss.photos`, path empty, service type `HTTP`, URL `gallery:8080`.
-   Optionally add `www.lss.photos` the same way.
+   application route): hostname `<your-domain>`, path empty, service type `HTTP`, URL `gallery:8080`.
+   Optionally add `www.<your-domain>` the same way.
 
 ### B. ZimaBlade (over SSH)
 
@@ -79,7 +80,7 @@ tunnel token.
 5. **Check:**
    - `docker compose ps` shows both containers running; `curl -sI localhost:8080` returns 200
    - `docker compose logs tunnel` shows "Registered tunnel connection"
-   - https://lss.photos loads, and https://lss.photos/admin asks for a login: username `admin`, password `ADMIN_PASSWORD`.
+   - `https://<your-domain>` loads, and `/admin` asks for a login: username `admin`, password `ADMIN_PASSWORD`.
      That creates the first account only. Afterwards passwords are managed in Admin → Accounts,
      and changing `ADMIN_PASSWORD` does nothing.
 
