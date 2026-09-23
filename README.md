@@ -5,19 +5,25 @@ Public photo galleries (thumbnail grid, full-size viewer with download and share
 Photos, the database and the login-cookie key live in `data/`, which is not in git. Back that folder up.
 
 **Game calendar** (`/calendar`, "Calendar" in the header): a month view with two layers you can switch on and off.
-- **Norwalk schedule**: every Norwalk High varsity game (including the Norwalk/Brien McMahon co-op team), for sports in season. There's no feed, so
-  `fciac.py` reads the CIAC master schedule pages that fciac.net/schedules links to, in a background thread,
-  when the site starts and then every 6 hours. Filter by sport.
+- **Norwalk schedule**: every Norwalk High game, all sports and levels (varsity, JV, freshman), including co-op
+  teams like Norwalk/Brien McMahon. There's no feed, so `fciac.py` reads Norwalk's all-teams page on the CIAC site
+  (and Brien McMahon's, for co-ops it hosts) in a background thread, when the site starts and then every 6 hours.
+  New sports show up on their own once the school enters their schedules. Filter by sport and level.
 - **LSS bookings** on top: visitors pick a game and send a request (name, email or phone, who to photograph).
   The calendar then shows the game as Requested, or Booked once it's accepted; names are never shown publicly.
   Each requester gets a private status page with the answer and any note, and can cancel from there.
   There is no email: the site has no mail server, so the status page is how they find out.
 - If a game disappears from the CIAC schedule, requests for it are kept and flagged "no longer on the schedule".
+- **Private events** (`/calendar/private`, "Book a private event"): parties, portraits, anything not on the calendar.
+  Same request flow and status page. The public calendar only says "private booking" on that day, never the details.
+- **Busy days** (set in Admin → Bookings): nobody can request a game or private event that day, and the calendar
+  shows it as not available.
 
 **Admin** (log in at `/admin`):
 - **Galleries**: every gallery, grouped by section, with edit / add photos / view / delete
-- **Bookings**: requests waiting (the tab shows how many), with accept / decline and an optional note;
-  warns when you're already booked that day. Also shows when the schedule was last read, with "Check now".
+- **Bookings**: requests waiting (the tab shows how many), games and private events, with accept / decline and an
+  optional note; warns when you're already booked or busy that day. "Days you're busy": block a day (or a run of
+  days) with a private note, and open it again. Also shows when the schedule was last read, with "Check now".
 - **Upload**: new gallery or more photos for an existing one
 - **Sections**: add, rename, reorder and delete the home-page headings (Sports Galleries, My Adventures…)
   and their subsections (Baseball, Field Hockey…). Visitors filter a heading's galleries by subsection.
@@ -95,9 +101,9 @@ tunnel token.
   `docker compose exec gallery python -c "import sqlite3; c = sqlite3.connect('data/gallery.db'); c.execute('delete from users'); c.commit()"`
   then `docker compose restart gallery`. `admin` / `ADMIN_PASSWORD` works again (galleries are untouched).
 - **Back up `data/`** (photos + `gallery.db`). That folder is the whole site's content.
-- **Schedule looks stale or empty?** Admin → Bookings shows the last check and any errors. The sport list
-  (CIAC ids, seasons) and the team names kept (`TEAMS`: Norwalk and its co-op) are at the top of `fciac.py`.
-  To show another school's games too, add its name there exactly as the CIAC schedule spells it.
+- **Schedule looks stale or empty?** Admin → Bookings shows the last check and any errors. The CIAC school ids
+  read (`SCHOOLS`) and the team name kept (`TEAM`) are at the top of `fciac.py`. The CIAC site blocks requests
+  without a User-Agent; if the error says this server's IP is blocked, contact CIAC support.
 - **502 from Cloudflare** means the `gallery` container isn't running, or the hostname's service isn't `HTTP` → `gallery:8080`.
 - **Deleted photos** can stay in Cloudflare's cache for a while. To remove one right away: Caching → Purge Cache → its URL.
 - Cloudflare's free plan limits each upload request to 100 MB. That's fine: the admin page uploads one photo per request.

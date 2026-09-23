@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Book a private event | {{ SITE }}{% endblock %}
+{% block body %}
+<main class="wrap page narrow">
+  <a class="back" href="{{ url_for('calendar_page') }}"><svg class="i"><use href="#arrow-left"/></svg>Back to the calendar</a>
+  <p class="eyebrow gold">Private booking</p>
+  <h1>Book a private event</h1>
+  <p class="desc">Birthday parties, senior portraits, team photos, another school's game: anything that isn't a Norwalk
+    High game on the calendar. Tell us about it and {{ SITE }} will get back to you.</p>
+  <div class="bar"></div>
+
+  {% if busy %}
+  <div class="flash warn" role="note">
+    <b>{{ SITE }} isn't available on these days:</b>
+    {% for b in busy %}{{ b.date|nice_date }}{{ '; ' if not loop.last }}{% endfor %}
+  </div>
+  {% endif %}
+  {% if error %}<p class="flash" role="alert">{{ error }}</p>{% endif %}
+  <form class="form" method="post">
+    <label>What's the event? <input name="what" value="{{ form.get('what', '') }}" maxlength="100" required placeholder="Sweet 16, senior portraits, travel soccer game…"></label>
+    <div class="two">
+      <label>Date <input type="date" name="date" value="{{ form.get('date', day) }}" min="{{ min_day }}" required></label>
+      <label>Start time <input type="time" name="time" value="{{ form.get('time', '') }}"></label>
+    </div>
+    <label>Where? <input name="place" value="{{ form.get('place', '') }}" maxlength="200" placeholder="Address or place name"></label>
+    <label>Your name <input name="name" value="{{ form.get('name', '') }}" autocomplete="name" maxlength="100" required></label>
+    <label>Email <input type="email" name="email" value="{{ form.get('email', '') }}" autocomplete="email" maxlength="200"></label>
+    <label>Phone <input type="tel" name="phone" value="{{ form.get('phone', '') }}" autocomplete="tel" maxlength="40"></label>
+    <label>Anything else? <textarea name="note" rows="4" maxlength="1000" placeholder="How long it runs, how many people, the kind of photos you want">{{ form.get('note', '') }}</textarea></label>
+    <label class="hp" aria-hidden="true">Website <input name="website" tabindex="-1" autocomplete="off"></label>
+    <div class="row"><button class="btn">Send request</button><span>Email or phone, so we can reach you.</span></div>
+  </form>
+  <p class="fine">After sending you'll get a private link that shows whether {{ SITE }} accepted. Details of private events are
+    never shown on the public calendar.</p>
+</main>
+{% endblock %}

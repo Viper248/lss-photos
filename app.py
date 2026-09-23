@@ -1,5 +1,5 @@
-"""Photo gallery site: public galleries, FCIAC game calendar with booking requests, and /admin (user accounts)
-for uploads, bookings and site settings. Run/deploy: see README.md."""
+"""Photo gallery site: public galleries, Norwalk High game calendar with booking requests (games and private events),
+and /admin (user accounts) for uploads, bookings, busy days and site settings. Run/deploy: see README.md."""
 import io
 import os
 import re
@@ -37,7 +37,8 @@ LINKS = {  # key: (label, placeholder, what a bare handle is appended to); shown
 FORMATS = {"JPEG": ".jpg", "MPO": ".jpg", "PNG": ".png", "WEBP": ".webp"}
 THUMB_PX = 800  # long edge; sharp in the grid on retina screens, ~100 KB each
 MAX_FAILS, FAIL_WINDOW = 10, timedelta(minutes=15)  # per IP, then logins are refused for a while
-MAX_REQUESTS = 5  # booking requests per IP per hour
+MAX_REQUESTS = 5  # booking requests per IP per hour (games and private events together)
+MAX_BUSY_DAYS = 90  # one "busy from ... to" entry in admin
 LOCAL = ZoneInfo("America/New_York")  # game times on the CIAC site are local
 EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 DATA = Path(os.environ.get("DATA_DIR") or Path(__file__).parent / "data")
@@ -62,13 +63,15 @@ create index if not exists logins_by_ip on logins (ip, at);
 create table if not exists settings (key text primary key, value text not null);
 create table if not exists games (id integer primary key, key text not null unique, sport_id integer not null,
     sport text not null, date text not null, time text not null, sort text not null, kind text not null,
-    home text not null, away text not null, site text not null, seen text not null, gone integer not null default 0);
+    home text not null, away text not null, site text not null, seen text not null, gone integer not null default 0,
+    level text not null default '', private integer not null default 0);
 create index if not exists games_by_date on games (date, sort);
 create table if not exists bookings (id integer primary key, game_id integer not null, token text not null unique,
     name text not null, email text not null, phone text not null, note text not null,
     status text not null default 'pending', reply text not null default '', ip text not null,
     created text not null, decided text);
 create index if not exists bookings_by_game on bookings (game_id);
+create table if not exists busy_days (date text primary key, note text not null default '');
 """)
 con.execute("begin")  # the one-time setup below happens all at once or not at all
 if not con.execute("select 1 from sections").fetchone():
@@ -83,6 +86,12 @@ if "category" in [r[1] for r in con.execute("pragma table_info(galleries)")]:  #
         con.execute("update galleries set section_id = (select id from sections where name = ? and parent_id is null)"
                     " where category = ?", (name, key))
     con.execute("alter table galleries drop column category")
+games_cols = [r[1] for r in con.execute("pragma table_info(games)")]
+if "level" not in games_cols:  # databases from the varsity-only schedule, before private events
+    con.execute("alter table games add column level text not null default ''")
+    con.execute("update games set level = 'Varsity'")
+if "private" not in games_cols:
+    con.execute("alter table games add column private integer not null default 0")
 if not con.execute("select 1 from users").fetchone():  # first run: one account, from ADMIN_PASSWORD
     first_pw = os.environ.get("ADMIN_PASSWORD") or secrets.token_urlsafe(9)
     con.execute("insert into users (username, password, created) values ('admin', ?, ?)",
@@ -106,10 +115,12 @@ GALLERIES = """select g.*, coalesce(s.parent_id, s.id) as top_id, coalesce(p.nam
 NEWEST = " order by g.date desc, g.id desc"
 DUMMY_HASH = generate_password_hash("x")  # unknown usernames take as long to reject as wrong passwords
 # Each game's booking status: accepted if any request was accepted, else pending if any is waiting.
+# Private events are rows in games too (private = 1, sport "Private event", home = what it is), never shown publicly.
 GAMES = """select g.*, (select case when sum(status = 'accepted') then 'accepted' when sum(status = 'pending')
     then 'pending' end from bookings where game_id = g.id) as booked from games g"""
-BOOKINGS = """select b.*, g.sport, g.date, g.time, g.sort, g.home, g.away, g.site, g.gone
+BOOKINGS = """select b.*, g.sport, g.level, g.kind, g.date, g.time, g.sort, g.home, g.away, g.site, g.gone, g.private
     from bookings b join games g on g.id = b.game_id"""
+ACCEPTED = "exists (select 1 from bookings where game_id = g.id and status = 'accepted')"
 
 if os.environ.get("FCIAC_SYNC", "1") != "0":
     fciac.start(DB)
@@ -198,7 +209,7 @@ def media(path):
     return send_from_directory(MEDIA, path, max_age=31536000)  # random names, never change
 
 
-# --- calendar: FCIAC games with LSS bookings on top ---
+# --- calendar: Norwalk games with LSS bookings on top; private events; days LSS is busy ---
 
 def local_today():
     return datetime.now(LOCAL).date()
@@ -214,11 +225,27 @@ def month_arg(value, fallback):
 app.jinja_env.globals.update(called_off=fciac.called_off)
 
 
+def busy_note(day):
+    """Why LSS can't take bookings on this ISO date ('' = free, None = not busy), from Admin -> Bookings."""
+    row = q("select note from busy_days where date = ?", day).fetchone()
+    return row["note"] if row else None
+
+
 @app.template_filter()
 def matchup(g):
-    if not g["away"]:
+    if not g["away"]:  # private events, and games with a title but no opponent listed
         return g["home"]
+    if not g["home"]:  # another school's meet, or a neutral site
+        teams = g["away"].split(", ")
+        return " vs ".join(teams) if len(teams) == 2 else "Meet: " + g["away"]
     return f"{g['away']} at {g['home']}" if "," not in g["away"] else f"{g['home']} meet: {g['away']}"
+
+
+@app.template_filter()
+def team_tag(g):
+    """'Football · Freshman · Scrimmage': sport, level unless varsity, type unless a league game."""
+    return " · ".join(x for x in (g["sport"], g["level"] if g["level"] != "Varsity" else "",
+                                  g["kind"] if g["kind"] != "League" else "") if x)
 
 
 @app.get("/calendar")
@@ -230,11 +257,14 @@ def calendar_page():
     except ValueError:
         day = today if today.replace(day=1) == month else month
     layers = set(a.getlist("layer")) if "f" in a else {"fciac", "lss"}  # f: the filter form was submitted
-    sport = a.get("sport", type=int)
+    sport, level = a.get("sport", type=int), a.get("level", "")
     weeks = Calendar(firstweekday=6).monthdatescalendar(month.year, month.month)  # Sunday first
-    sql, args = GAMES + " where not g.gone and g.date between ? and ?", [weeks[0][0].isoformat(), weeks[-1][-1].isoformat()]
+    span = [weeks[0][0].isoformat(), weeks[-1][-1].isoformat()]
+    sql, args = GAMES + " where not g.gone and not g.private and g.date between ? and ?", list(span)
     if sport:
         sql, args = sql + " and g.sport_id = ?", args + [sport]
+    if level:
+        sql, args = sql + " and g.level = ?", args + [level]
     games = q(sql + " order by g.date, g.sort, g.sport", *args).fetchall()
     if "fciac" not in layers:  # bookings layer alone: only the games LSS is booked for or asked about
         games = [gm for gm in games if gm["booked"]] if "lss" in layers else []
@@ -246,42 +276,102 @@ def calendar_page():
         d["n"] += 1
         if gm["booked"]:
             d[gm["booked"]] += 1
+    busy = {r["date"] for r in q("select date from busy_days where date between ? and ?", *span)}
+    private = set()  # days with an accepted private event: shown as booked, nothing else about them
+    if "lss" in layers:
+        private = {r["date"] for r in q(f"select distinct date from games g where g.private and {ACCEPTED}"
+                                        " and g.date between ? and ?", *span)}
+    for d in busy | private:
+        days.setdefault(d, {"n": 0, "accepted": 0, "pending": 0})
     s = settings()
-    keep = {"f": 1, "layer": sorted(layers), "sport": sport}  # carried by every link
+    keep = {"f": 1, "layer": sorted(layers), "sport": sport, "level": level or None}  # carried by every link
     return render_template("calendar.html", keep=keep, weeks=weeks, month=month, day=day, this_day=today, days=days, layers=layers,
-                           games=[gm for gm in games if gm["date"] == day.isoformat()], sport=sport,
-                           sports=q("select distinct sport_id, sport from games order by sport").fetchall(),
+                           games=[gm for gm in games if gm["date"] == day.isoformat()], sport=sport, level=level,
+                           busy=busy, private=private, day_busy=day.isoformat() in busy,
+                           sports=q("select distinct sport_id, sport from games where not private order by sport").fetchall(),
+                           levels=[r[0] for r in q("select distinct level from games where not private and level != ''"
+                                                   " order by level = 'Varsity' desc, level = 'Junior Varsity' desc, level")],
                            prev=(month - timedelta(days=1)).replace(day=1), next=(month + timedelta(days=31)).replace(day=1),
                            synced=s.get("sync_at"), syncing=s.get("sync_running") == "1")
 
 
 @app.route("/calendar/game/<int:game_id>", methods=["GET", "POST"])
 def book_game(game_id):
-    gm = q(GAMES + " where g.id = ? and not g.gone", game_id).fetchone() or abort(404)
-    open_for_requests = gm["date"] >= local_today().isoformat() and not fciac.called_off(gm["time"])
+    gm = q(GAMES + " where g.id = ? and not g.gone and not g.private", game_id).fetchone() or abort(404)
+    played, day_busy = gm["date"] < local_today().isoformat(), busy_note(gm["date"]) is not None
+    open_for_requests = not played and not fciac.called_off(gm["time"]) and not day_busy
     form, error = request.form, None
     if request.method == "POST":
-        ip, hour_ago = client_ip(), (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(timespec="seconds")
-        name, email, phone = form.get("name", "").strip(), form.get("email", "").strip(), form.get("phone", "").strip()
-        if form.get("website"):  # hidden field only bots fill in
-            abort(400, "Request not sent.")
         if not open_for_requests:
             error = "This game can't be booked any more."
-        elif not name or not (email or phone):
-            error = "Please give your name and an email address or phone number."
-        elif email and not EMAIL.fullmatch(email):
-            error = "That email address doesn't look right."
-        elif q("select count(*) from bookings where ip = ? and created > ?", ip, hour_ago).fetchone()[0] >= MAX_REQUESTS:
-            error = "Too many requests from here in the last hour. Please try again later."
         else:
-            token = secrets.token_urlsafe(12)
-            q("insert into bookings (game_id, token, name, email, phone, note, ip, created) values (?, ?, ?, ?, ?, ?, ?, ?)",
-              game_id, token, name[:100], email[:200], phone[:40], form.get("note", "").strip()[:1000], ip, now())
-            return redirect(url_for("booking_status", token=token))
-    busy = q("""select * from games g where g.date = ? and g.id != ? and not g.gone and exists
-        (select 1 from bookings where game_id = g.id and status = 'accepted') order by g.sort""", gm["date"], game_id)
-    return render_template("book.html", gm=gm, open_for_requests=open_for_requests, form=form, error=error,
-                           busy=busy.fetchall()), 400 if error else 200
+            error = request_problem(form)
+        if not error:
+            return redirect(url_for("booking_status", token=add_booking(game_id, form)))
+    booked = q(f"""select * from games g where g.date = ? and g.id != ? and not g.gone and {ACCEPTED} order by g.sort""",
+               gm["date"], game_id)
+    return render_template("book.html", gm=gm, open_for_requests=open_for_requests, played=played, form=form,
+                           error=error, busy=booked.fetchall()), 400 if error else 200
+
+
+def request_problem(form):
+    """What's wrong with a booking request form (game or private event), or None."""
+    ip, hour_ago = client_ip(), (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(timespec="seconds")
+    if form.get("website"):  # hidden field only bots fill in
+        abort(400, "Request not sent.")
+    email = form.get("email", "").strip()
+    if not form.get("name", "").strip() or not (email or form.get("phone", "").strip()):
+        return "Please give your name and an email address or phone number."
+    if email and not EMAIL.fullmatch(email):
+        return "That email address doesn't look right."
+    if q("select count(*) from bookings where ip = ? and created > ?", ip, hour_ago).fetchone()[0] >= MAX_REQUESTS:
+        return "Too many requests from here in the last hour. Please try again later."
+    return None
+
+
+def add_booking(game_id, form):
+    token = secrets.token_urlsafe(12)
+    q("insert into bookings (game_id, token, name, email, phone, note, ip, created) values (?, ?, ?, ?, ?, ?, ?, ?)",
+      game_id, token, form["name"].strip()[:100], form.get("email", "").strip()[:200], form.get("phone", "").strip()[:40],
+      form.get("note", "").strip()[:1000], client_ip(), now())
+    return token
+
+
+@app.route("/calendar/private", methods=["GET", "POST"])
+def book_private():
+    """Request LSS for something that isn't a Norwalk game: a party, portraits, another school's event..."""
+    form, error, today = request.form, None, local_today()
+    busy = q("select date from busy_days where date >= ? order by date limit 60", today.isoformat()).fetchall()
+    if request.method == "POST":
+        what, place = form.get("what", "").strip(), form.get("place", "").strip()
+        try:
+            day = date.fromisoformat(form.get("date", ""))
+        except ValueError:
+            day = None
+        try:
+            start = datetime.strptime(form.get("time", ""), "%H:%M")
+        except ValueError:
+            start = None
+        if not what:
+            error = "Tell us what the event is."
+        elif not day:
+            error = "Pick the date of the event."
+        elif day < today or day > today + timedelta(days=730):
+            error = "Pick a date between today and two years from now."
+        elif form.get("time") and not start:
+            error = "That start time doesn't look right."
+        elif busy_note(day.isoformat()) is not None:
+            error = f"Sorry, {SITE} isn't available on {nice_date(day.isoformat())}. Please pick another day."
+        else:
+            error = request_problem(form)
+        if not error:
+            t = f"{start:%I:%M %p}".lstrip("0") if start else "TBA"
+            game_id = q("""insert into games (key, sport_id, sport, date, time, sort, kind, home, away, site, seen, private)
+                values (?, 0, 'Private event', ?, ?, ?, '', ?, '', ?, ?, 1)""", "private-" + secrets.token_hex(8),
+                        day.isoformat(), t, fciac.sort_time(t), what[:100], place[:200], now()).lastrowid
+            return redirect(url_for("booking_status", token=add_booking(game_id, form)))
+    return render_template("book_private.html", form=form, error=error, busy=busy, min_day=today.isoformat(),
+                           day=request.args.get("d", "")), 400 if error else 200
 
 
 @app.route("/booking/<token>", methods=["GET", "POST"])
@@ -594,9 +684,13 @@ def admin_logins():
 @app.route("/admin/bookings", methods=["GET", "POST"])
 def admin_bookings():
     if request.method == "POST":
-        if request.form.get("action") == "sync":
+        action = request.form.get("action")
+        if action == "sync":
             fciac.sync_now()
-            flash("Checking the FCIAC schedule now. It can take a few minutes; reload this page to see when it's done.")
+            flash("Checking the CIAC schedule now. It usually takes a few seconds; reload this page to see when it's done.")
+            return redirect(request.path)
+        if action in ("busy", "free"):
+            flash(busy_days_change(request.form, action))
             return redirect(request.path)
         b = q("select * from bookings where id = ?", request.form.get("id", type=int)).fetchone() or abort(404)
         status = {"accept": "accepted", "decline": "declined", "reopen": "pending"}.get(request.form.get("action")) or abort(400)
@@ -612,9 +706,32 @@ def admin_bookings():
         booked_days.setdefault(b["date"], []).append(b)
     past = q(BOOKINGS + " where b.status in ('declined', 'canceled') or (b.status = 'accepted' and g.date < ?)"
              " order by g.date desc limit 50", today).fetchall()
+    busy = q("select * from busy_days where date >= ? order by date", today).fetchall()
     s = settings()
     return render_template("admin_bookings.html", pending=pending, accepted=accepted, past=past, booked_days=booked_days,
-                           sync=s, games=q("select count(*) from games where not gone").fetchone()[0])
+                           busy=busy, busy_dates={r["date"]: r["note"] for r in busy}, sync=s,
+                           games=q("select count(*) from games where not gone and not private").fetchone()[0])
+
+
+def busy_days_change(f, action):
+    """Mark a day (or from ... to) as busy, or free one again. Returns what to tell the admin."""
+    if action == "free":
+        if q("delete from busy_days where date = ?", f.get("date", "")).rowcount:
+            return f"{nice_date(f['date'])} is open for bookings again."
+        return "That day wasn't marked busy."
+    try:
+        first = date.fromisoformat(f.get("date", ""))
+        last = date.fromisoformat(f["until"]) if f.get("until") else first
+    except ValueError:
+        return "Pick the day you're busy."
+    if not 0 <= (last - first).days < MAX_BUSY_DAYS:
+        return f"The last day has to be on or after the first, and at most {MAX_BUSY_DAYS} days later."
+    note = f.get("note", "").strip()[:200]
+    for i in range((last - first).days + 1):
+        q("insert into busy_days (date, note) values (?, ?) on conflict (date) do update set note = excluded.note",
+          (first + timedelta(days=i)).isoformat(), note)
+    span = nice_date(first.isoformat()) + (f" to {nice_date(last.isoformat())}" if last != first else "")
+    return f"Marked {span} as busy. Nobody can request a booking then."
 
 
 if __name__ == "__main__":

@@ -5,8 +5,10 @@
 <main class="wrap page">
   <p class="eyebrow gold">Book a game</p>
   <h1>Game calendar</h1>
-  <p class="desc">Every Norwalk High varsity game, straight from the CIAC schedule. Want {{ SITE }} at a game?
+  <p class="desc">Every Norwalk High game, every sport and level, straight from the CIAC schedule. Want {{ SITE }} at a game?
     Pick it and send a request; you'll get a link that shows when it's accepted.</p>
+  <p class="row"><a class="btn ghost" href="{{ url_for('book_private', d=day.isoformat() if day >= this_day else none) }}">Book a private event</a>
+    <span>Parties, portraits, other schools' games: anything that isn't on this calendar.</span></p>
   <div class="bar"></div>
 
   <form class="cal-filters" id="filters">
@@ -21,6 +23,10 @@
       <option value="">All sports</option>
       {% for s in sports %}<option value="{{ s.sport_id }}"{{ ' selected' if s.sport_id == sport }}>{{ s.sport }}</option>{% endfor %}
     </select>
+    <select name="level" aria-label="Level">
+      <option value="">All levels</option>
+      {% for l in levels %}<option{{ ' selected' if l == level }}>{{ l }}</option>{% endfor %}
+    </select>
     <noscript><button class="btn">Show</button></noscript>
   </form>
 
@@ -34,38 +40,41 @@
       <div class="grid7 dow" aria-hidden="true">{% for d in 'SMTWTFS' %}<span>{{ d }}</span>{% endfor %}</div>
       <div class="grid7">
         {% for week in weeks %}{% for d in week %}
-        {% set info = days.get(d.isoformat()) %}
-        <a href="{{ cal_url(month, d) }}" class="daycell{{ ' out' if d.month != month.month }}{{ ' sel' if d == day }}{{ ' now' if d == this_day }}"
-           {% if d == day %}aria-current="date"{% endif %} aria-label="{{ d.strftime('%A, %B') }} {{ d.day }}{% if info %}: {{ info.n }} game{{ 's' if info.n != 1 }}{% if info.accepted %}, LSS booked{% endif %}{% endif %}">
+        {% set iso = d.isoformat() %}{% set info = days.get(iso) %}{% set booked = info and (info.accepted or iso in private) %}
+        <a href="{{ cal_url(month, d) }}" class="daycell{{ ' out' if d.month != month.month }}{{ ' sel' if d == day }}{{ ' now' if d == this_day }}{{ ' busy' if iso in busy }}"
+           {% if d == day %}aria-current="date"{% endif %} aria-label="{{ d.strftime('%A, %B') }} {{ d.day }}{% if info %}: {{ info.n }} game{{ 's' if info.n != 1 }}{% if iso in busy %}, {{ SITE }} not available{% elif booked %}, {{ SITE }} booked{% endif %}{% endif %}">
           <b>{{ d.day }}</b>
           {% if info %}
           <span class="marks">
-            {% if info.accepted %}<i class="mark booked"></i>{% elif info.pending %}<i class="mark asked"></i>{% endif %}
-            {% if 'fciac' in layers %}<small>{{ info.n }}</small>{% endif %}
+            {% if iso in busy %}<i class="mark off"></i>{% elif booked %}<i class="mark booked"></i>{% elif info.pending %}<i class="mark asked"></i>{% endif %}
+            {% if 'fciac' in layers and info.n %}<small>{{ info.n }}</small>{% endif %}
           </span>
           {% endif %}
         </a>
         {% endfor %}{% endfor %}
       </div>
       <p class="legend"><span><i class="mark booked"></i>{{ SITE }} booked</span><span><i class="mark asked"></i>Requested</span>
+        <span><i class="mark off"></i>Not available</span>
         {% if 'fciac' in layers %}<span><small>12</small> games that day</span>{% endif %}</p>
     </section>
 
     <section class="day" aria-live="polite">
       <h2>{{ day.strftime('%A, %B') }} {{ day.day }}</h2>
+      {% if day_busy %}<p class="flash warn">{{ SITE }} isn't available this day, so games can't be booked.</p>
+      {% elif day.isoformat() in private %}<p class="flash">{{ SITE }} has a private booking this day.</p>{% endif %}
       {% if games %}
       <ul class="games">
         {% for gm in games %}
         <li class="game{{ ' off' if called_off(gm.time) }}{{ ' is-' ~ gm.booked if gm.booked }}">
           <div class="when">{{ gm.time }}</div>
           <div class="what">
-            <span class="tag">{{ gm.sport }}{% if gm.kind and gm.kind != 'League' %} · {{ gm.kind }}{% endif %}</span>
+            <span class="tag">{{ gm|team_tag }}</span>
             <b>{{ gm|matchup }}</b>
             <small>{{ gm.site }}</small>
             {% if gm.booked == 'accepted' %}<span class="status ok-s">{{ SITE }} will be there</span>
             {% elif gm.booked == 'pending' %}<span class="status ask-s">Requested, waiting for a reply</span>{% endif %}
           </div>
-          {% if not called_off(gm.time) and gm.date >= this_day.isoformat() %}
+          {% if not called_off(gm.time) and gm.date >= this_day.isoformat() and not day_busy %}
           <a class="btn{{ ' ghost' if gm.booked }}" href="{{ url_for('book_game', game_id=gm.id) }}">{{ 'Request photos' if gm.booked else 'Book ' ~ SITE }}</a>
           {% endif %}
         </li>
@@ -73,6 +82,7 @@
       </ul>
       {% elif not layers %}
       <p class="none">Turn on a layer above to see games.</p>
+      {% elif day_busy or day.isoformat() in private and 'fciac' not in layers %}
       {% elif syncing and not sports %}
       <p class="none">Loading the Norwalk schedule. Check back in a few minutes.</p>
       {% else %}

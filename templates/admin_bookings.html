@@ -1,9 +1,10 @@
 {% extends "admin_base.html" %}
 {% block title %}Bookings | Admin | {{ SITE }}{% endblock %}
+{% from "macros.html" import date_field %}
 {% macro game(b) %}
-<p class="tag">{{ b.sport }}</p>
+<p class="tag">{{ b|team_tag }}</p>
 <b class="fg">{{ b|matchup }}</b>
-<p class="meta"><span><svg class="i"><use href="#calendar"/></svg>{{ b.date|nice_date }}, {{ b.time }}</span><span>{{ b.site }}</span></p>
+<p class="meta"><span><svg class="i"><use href="#calendar"/></svg>{{ b.date|nice_date }}, {{ b.time }}</span>{% if b.site %}<span>{{ b.site }}</span>{% endif %}</p>
 {% if b.gone %}<p class="bad">No longer on the schedule: it may have moved.</p>{% endif %}
 {% endmacro %}
 {% macro who(b) %}
@@ -15,7 +16,8 @@
 {% endmacro %}
 {% block admin %}
 <h1>Bookings</h1>
-<p class="desc">Requests from the <a class="link gold" href="{{ url_for('calendar_page') }}">game calendar</a>.
+<p class="desc">Requests from the <a class="link gold" href="{{ url_for('calendar_page') }}">game calendar</a> and the
+  <a class="link gold" href="{{ url_for('book_private') }}">private event form</a>.
   Accepting shows the game as booked on the calendar, and the person sees your answer (and note) on their status page.
   There's no automatic email, so reach out with the contact details if you need to.</p>
 <div class="bar"></div>
@@ -24,6 +26,7 @@
 {% for b in pending %}
 <section class="panel booking">
   <div>{{ game(b) }}
+    {% if b.date in busy_dates %}<p class="flash warn">You marked this day as busy{% if busy_dates[b.date] %} ({{ busy_dates[b.date] }}){% endif %}.</p>{% endif %}
     {% for other in booked_days.get(b.date, []) if other.game_id != b.game_id %}
     <p class="flash">You're already booked that day: {{ other.time }} {{ other.sport }}, {{ other|matchup }}</p>
     {% endfor %}
@@ -72,13 +75,39 @@
 </table>
 {% endif %}
 
+<h2 class="sub" id="busy">Days you're busy</h2>
+<p class="desc">Nobody can request a booking on these days (games or private events), and the calendar shows them as not available.
+  The note is only for you.</p>
+<form class="panel form busy-form" method="post" action="#busy">
+  <div class="two">
+    <label>Busy on {{ date_field('date', '') }}</label>
+    <label>Through (optional) {{ date_field('until', '') }}</label>
+  </div>
+  <label>Note (optional) <input name="note" maxlength="200" placeholder="Vacation, family wedding…"></label>
+  <div class="row"><button class="btn" name="action" value="busy">Mark as busy</button><span>Pick a second date to block several days in a row.</span></div>
+</form>
+{% if busy %}
+<table class="table">
+  <tr><th>Day</th><th class="hide-sm">Note</th><th></th></tr>
+  {% for d in busy %}
+  <tr>
+    <td class="fg">{{ d.date|nice_date }}{% if booked_days.get(d.date) %}<br><span class="bad">You have a booking this day</span>{% endif %}</td>
+    <td class="hide-sm">{{ d.note }}</td>
+    <td class="actions"><form method="post" action="#busy"><input type="hidden" name="date" value="{{ d.date }}"><button class="link" name="action" value="free">Open for bookings</button></form></td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="none">No busy days coming up.</p>
+{% endif %}
+
 <h2 class="sub">Norwalk schedule</h2>
 <form class="panel sync" method="post">
-  <p>{{ games }} Norwalk High varsity games for sports in season.
+  <p>{{ games }} Norwalk High games this school year, every sport and level.
     {% if sync.sync_running == '1' %}<b class="gold">Checking the CIAC site now…</b>
     {% elif sync.sync_at %}Last checked <time datetime="{{ sync.sync_at }}">{{ sync.sync_at[:10] }}</time>; it checks again every 6 hours.
     {% else %}Not checked yet.{% endif %}</p>
-  {% if sync.sync_error %}<p class="bad">Last check had problems: {{ sync.sync_error }}</p>{% endif %}
+  {% if sync.sync_error %}<p class="bad">Last check failed, so the schedule may be out of date: {{ sync.sync_error }}</p>{% endif %}
   <div class="row"><button class="btn ghost" name="action" value="sync">Check now</button></div>
 </form>
 {% endblock %}

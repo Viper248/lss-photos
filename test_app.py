@@ -147,34 +147,66 @@ assert c.get("/admin").status_code == 302  # deleted account is signed out
 sam.post("/admin/logout")
 assert sam.get("/admin").status_code == 302
 
-# --- game calendar: sync keeps Norwalk's games, booking requests go pending -> accepted
-def master(*rows):  # a CIAC master schedule page with these (date, time, type, home, away, site) rows
-    cells = "".join("<tr>" + "".join(f'<td id="x">{c}</td>' for c in (f"{d:%m/%d/%Y}", *r)) + "</tr>" for d, *r in rows)
-    return f"<table><tr><th>GameDate</th><th>Time</th></tr>{cells}</table>"
+# --- game calendar: sync keeps Norwalk's teams (every level), booking requests go pending -> accepted
+HEADS = ["Date", "Time", "Team Level", "Type", "Status", "Title", "Home/Away", "Opponent", "Result", "Score", "Details",
+         "Site", "Transportation"]
+MENU = {"Field Hockey - Girls": 3, "Football - Boys": 4, "Soccer - Boys": 7, "Fall Golf - Boys": 5, "Swimming - Girls": 10}
+
+
+def school(*blocks):
+    """A CIAC all-teams schedule page. blocks: (sport, team, games); a game is (day, time, level, home/away,
+    opponents, site) plus optional status. Extra opponents become rowspan rows, as on the real page."""
+    menu = "".join(f'<a class=" dsToolbarMenuLink " href="/DashboardTeamSchedule.aspx?SportGenderListID={i}&amp;'
+                   f'TeamLevelID=0&amp;SchoolID=112&amp;Status=0&amp;SeasonID=-1"><i class="fa x"></i>{n}</a>'
+                   for n, i in MENU.items())
+    out = [f"<html><h1>CIAC</h1>{menu}"]
+    for sport, team, games in blocks:
+        rows = "<tr>" + "".join(f"<th>{h}</th>" for h in HEADS) + "</tr>"
+        for d, t, level, where, opp, site_, *status in games:
+            opp = opp.split(", ")
+            cells = [f"{d:%a}".upper() + f" {d.month}/{d.day}", t, level, "League", (status or ["Normal"])[0], "",
+                     where, opp[0], "", "", "", site_, ""]
+            rows += "<tr>" + "".join(f'<td rowspan="{len(opp)}">{c}</td>' for c in cells) + "</tr>"
+            rows += "".join(f"<tr><td>{o}</td><td></td></tr>" for o in opp[1:])
+        out.append(f"<div class='TeamBlocl'><div class='HeaderText'><h1>{sport}</h1></div><div class='TeamHeaderWrapper'>"
+                   f"<img/><div class='TeamHeaderTextWrapper'><span class='TeamHeaderSchool'>{team}</span><br/></div></div>"
+                   f"<table>{rows}</table></div>")
+    return "".join(out)
 
 
 today = site.local_today()
 soon, later, gone_day = today + timedelta(days=2), today + timedelta(days=3), today - timedelta(days=5)
-page = master((soon, "4:00 PM", "League", "Norwalk", "Greenwich", "Norwalk High School - Stadium"),
-              (soon, "12:01 AM", "Non-League", "Staples", "Norwalk", "Staples - Field"),
-              (soon, "Postponed", "League", "Wilton", "Staples, Norwalk/Brien McMahon", "Wilton - Pool"),
-              (soon, "4:00 PM", "League", "Darien", "Ridgefield", "not Norwalk"),
-              (soon, "5:00 PM", "League", "Brien McMahon", "Trumbull", "McMahon alone isn't Norwalk"),
-              (later, "10:00 AM", "League", "Norwalk", "Ridgefield", "DH game 1"),
-              (later, "1:00 PM", "League", "Norwalk", "Ridgefield", "DH game 2"),
-              (gone_day, "4:00 PM", "League", "Stamford &amp; Co", "Norwalk", "past"))
-assert fciac.sync_sport(db, 3, page) == 6  # only Norwalk (and its co-op); the doubleheader stays two games
-games = {r[0]: r for r in db.execute("select site, time, sort, sport from games")}
-assert "not Norwalk" not in games and "McMahon alone isn't Norwalk" not in games and "Wilton - Pool" in games
+coop = ("Swimming - Girls", "Norwalk/Brien McMahon",
+        [(soon, "3:30 PM", "Varsity", "Away", "Wilton, Staples", "Wilton - Pool", "Postponed")])
+norwalk = school(
+    ("Field Hockey - Girls", "Norwalk", [
+        (soon, "4:00 PM", "Varsity", "Home", "Greenwich", "Norwalk High School - Stadium"),
+        (soon, "12:01 AM", "Junior Varsity", "Away", "Staples", "Staples - Field"),
+        (later, "10:00 AM", "Varsity", "Home", "Ridgefield", "DH game 1"),
+        (later, "1:00 PM", "Varsity", "Home", "Ridgefield", "DH game 2"),
+        (gone_day, "4:00 PM", "Varsity", "Away", "Stamford &amp; Co", "past")]),
+    ("Football - Boys", "Norwalk", [(soon, "5:30 PM", "Freshman", "Away", "Trumbull", "Trumbull - Cork Field")]),
+    ("Fall Golf - Boys", "Norwalk", [(soon, "3:00 PM", "Varsity", "Home", "Darien", "Oak Hills Golf Course")]),
+    coop)
+mcmahon = school(("Field Hockey - Girls", "Brien McMahon", [(soon, "5:00 PM", "Varsity", "Home", "Trumbull", "McMahon alone")]),
+                 coop)  # the co-op is on both schools' pages: read once
+assert fciac.sync(db, [norwalk, mcmahon]) == 8
+games = {r[0]: r for r in db.execute("select site, time, sort, sport, level, sport_id from games")}
+assert "McMahon alone" not in games and games["Wilton - Pool"][1] == "Postponed"
 assert games["Staples - Field"][1] == "TBA" and games["Norwalk High School - Stadium"][2] == "16:00"
 assert games["past"][3] == "Field Hockey" and fciac.called_off("Postponed") and not fciac.called_off("TBA")
+assert games["Oak Hills Golf Course"][3:] == ("Boys Golf", "Varsity", 5) and games["Trumbull - Cork Field"][4] == "Freshman"
+assert games["past"][0] == "past" and db.execute("select date from games where site = 'past'").fetchone()[0] == gone_day.isoformat()
 game_id = db.execute("select id from games where site like 'Norwalk High%'").fetchone()[0]
 past_id = db.execute("select id from games where site = 'past'").fetchone()[0]
 
 cal = text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}"))
 assert "Greenwich at Norwalk" in cal and "Norwalk at Staples" in cal and f'/calendar/game/{game_id}"' in cal
-assert "Wilton meet: Staples, Norwalk/Brien McMahon" in cal and "Book LSS Photos" in cal and "Darien" not in cal
+assert "Meet: Norwalk/Brien McMahon, Wilton, Staples" in cal and "Book LSS Photos" in cal and "McMahon alone" not in cal
+assert "Football · Freshman" in cal and "Field Hockey · Junior Varsity" in cal and "Darien at Norwalk" in cal
 assert "Greenwich at Norwalk" not in text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}&f=1&layer=fciac&sport=7"))
+freshmen = text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}&f=1&layer=fciac&level=Freshman"))
+assert "Norwalk at Trumbull" in freshmen and "Greenwich at Norwalk" not in freshmen
 assert "Greenwich at Norwalk" not in text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}&f=1&layer=lss"))  # nothing booked yet
 
 visitor = site.app.test_client()
@@ -209,17 +241,72 @@ only_lss = text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}&f=1&layer=lss"))
 assert "Greenwich at Norwalk" in only_lss and "LSS Photos will be there" in only_lss and "Norwalk at Staples" not in only_lss
 assert "will be there" not in text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}&f=1&layer=fciac"))  # schedule layer alone
 
-fciac.sync_sport(db, 3, master((later, "10:00 AM", "League", "Norwalk", "Ridgefield", "DH game 1")))  # games dropped
+# --- private events: requested like a game, never shown publicly beyond "private booking"
+guest = site.app.test_client()
+guest.environ_base["REMOTE_ADDR"] = "10.2.2.2"
+event = {"what": "Sweet 16 party", "date": later.isoformat(), "time": "18:30", "place": "12 Main St", "name": "Jo Guest",
+         "email": "", "phone": "203-555-0100", "note": "Three hours"}
+assert f'value="{later}"' in text(guest.get(f"/calendar/private?d={later}"))
+assert "what the event is" in text(guest.post("/calendar/private", data={**event, "what": ""}))
+assert "between today and two years" in text(guest.post("/calendar/private", data={**event, "date": gone_day.isoformat()}))
+assert "start time" in text(guest.post("/calendar/private", data={**event, "time": "25:99"}))
+r = guest.post("/calendar/private", data=event)
+assert r.status_code == 302 and r.headers["Location"].startswith("/booking/")
+private_url = r.headers["Location"]
+status = text(guest.get(private_url))
+assert "Private event" in status and "Sweet 16 party" in status and "6:30 PM" in status and "12 Main St" in status
+assert "Sweet 16" in text(sam.get("/admin/bookings"))
+private_booking = db.execute("select b.id from bookings b join games g on g.id = b.game_id where g.private").fetchone()[0]
+sam.post("/admin/bookings", data={"id": private_booking, "action": "accept"})
+cal = text(c.get(f"/calendar?m={later:%Y-%m}&d={later}"))
+assert "has a private booking this day" in cal and "Sweet 16" not in cal and "Private event" not in cal
+assert "Private event" not in text(c.get(f"/calendar?m={later:%Y-%m}&d={later}"))  # not in the sport filter either
+dh1 = db.execute("select id from games where site = 'DH game 1'").fetchone()[0]
+warning = text(visitor.get(f"/calendar/game/{dh1}"))
+assert "a private event" in warning and "Sweet 16" not in warning
+private_game = db.execute("select game_id from bookings where id = ?", (private_booking,)).fetchone()[0]
+assert c.get(f"/calendar/game/{private_game}").status_code == 404
+
+# --- busy days: no requests, games or private, and the calendar says so
+r = sam.post("/admin/bookings", data={"action": "busy", "date": soon.isoformat(), "until": "", "note": "Wedding"},
+             follow_redirects=True)
+assert "as busy" in text(r) and "Wedding" in text(r)
+cal = text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}"))
+assert "isn't available this day" in cal and "Greenwich at Norwalk" in cal and f'/calendar/game/{same_day}"' not in cal
+assert "Wedding" not in cal  # the note is only for the admin
+assert "isn't available on" in text(visitor.get(f"/calendar/game/{same_day}"))
+assert visitor.post(f"/calendar/game/{same_day}", data=form).status_code == 400
+assert "isn't available on" in text(guest.post("/calendar/private", data={**event, "date": soon.isoformat()}))
+assert "You have a booking this day" in text(sam.get("/admin/bookings"))  # busy, but Greenwich was already accepted
+r = sam.post("/admin/bookings", data={"action": "busy", "date": (today + timedelta(days=10)).isoformat(),
+                                      "until": (today + timedelta(days=12)).isoformat(), "note": ""})
+assert db.execute("select count(*) from busy_days").fetchone()[0] == 4
+assert "on or after the first" in text(sam.post("/admin/bookings", data={
+    "action": "busy", "date": later.isoformat(), "until": soon.isoformat()}, follow_redirects=True))
+sam.post("/admin/bookings", data={"action": "free", "date": soon.isoformat()})
+assert "isn't available" not in text(visitor.get(f"/calendar/game/{same_day}"))
+
+# --- schedule changes: vanished games deleted, or kept and marked gone if booked; private events untouched
+fciac.sync(db, [school(("Field Hockey - Girls", "Norwalk", [(later, "10:00 AM", "Varsity", "Home", "Ridgefield", "DH game 1")]))])
 assert db.execute("select gone from games where id = ?", (game_id,)).fetchone()[0] == 1  # booked: kept, marked gone
 assert not db.execute("select 1 from games where site = 'Staples - Field'").fetchone()  # unbooked: deleted
+assert db.execute("select gone from games where id = ?", (private_game,)).fetchone()[0] == 0
 assert "no longer on the schedule" in text(visitor.get(status_url))
 visitor.post(status_url)
 assert "You canceled this request" in text(visitor.get(status_url))
 
-fciac.fetch = lambda sid: (_ for _ in ()).throw(OSError("timed out")) if sid == 7 else page
-fciac.sync_all(site.DB, sports=[7, 3])
-assert "Boys Soccer: timed out" in dict(db.execute("select key, value from settings"))["sync_error"]
-assert "Boys Soccer: timed out" in text(sam.get("/admin/bookings"))
+fciac.fetch = lambda sid: (_ for _ in ()).throw(OSError("timed out")) if sid == 19 else norwalk
+fciac.sync_all(site.DB)
+assert "timed out" in dict(db.execute("select key, value from settings"))["sync_error"]
+assert not db.execute("select 1 from games where site = 'Staples - Field'").fetchone()  # a failed sync changes nothing
+assert "timed out" in text(sam.get("/admin/bookings"))
+fciac.fetch = lambda sid: "This IP Address has been blocked." if sid == 112 else mcmahon
+fciac.sync_all(site.DB)
+assert "blocked" in dict(db.execute("select key, value from settings"))["sync_error"]
+fciac.fetch = lambda sid: {112: norwalk, 19: mcmahon}[sid]
+fciac.sync_all(site.DB)
+assert dict(db.execute("select key, value from settings"))["sync_error"] == ""
+assert db.execute("select 1 from games where site = 'Staples - Field'").fetchone()
 
 # --- CSRF guard, then real deletes
 sam.post("/admin/login", data={"username": "sam", "password": "mine1234"})

@@ -3,7 +3,7 @@
 {% block body %}
 <main class="wrap page narrow">
   <a class="back" href="{{ url_for('calendar_page', m=gm.date[:7], d=gm.date) }}"><svg class="i"><use href="#arrow-left"/></svg>Back to the calendar</a>
-  <p class="eyebrow gold">{{ gm.sport }}{% if gm.kind %} · {{ gm.kind }}{% endif %}</p>
+  <p class="eyebrow gold">{{ gm|team_tag }}</p>
   <h1>{{ gm|matchup }}</h1>
   <p class="meta">
     <span><svg class="i"><use href="#calendar"/></svg>{{ gm.date|nice_date }}, {{ gm.time }}</span>
@@ -15,12 +15,17 @@
   {% elif gm.booked == 'pending' %}<p class="flash">Someone has already asked about this game. Add your request too.</p>{% endif %}
 
   {% if not open_for_requests %}
+  {% if called_off(gm.time) or played %}
   <p class="flash">This game {{ 'was ' ~ gm.time|lower if called_off(gm.time) else 'has already been played' }}, so it can't be booked.</p>
+  {% else %}
+  <p class="flash">Sorry, {{ SITE }} isn't available on {{ gm.date|nice_date }}, so this game can't be booked.
+    <a class="link gold" href="{{ url_for('calendar_page', m=gm.date[:7], d=gm.date) }}">Pick another game</a></p>
+  {% endif %}
   {% else %}
   {% if busy %}
   <div class="flash warn" role="note">
     <b>Heads up: {{ SITE }} is already booked for another game that day.</b>
-    <ul>{% for other in busy %}<li>{{ other.time }} · {{ other.sport }}, {{ other|matchup }} ({{ other.site }})</li>{% endfor %}</ul>
+    <ul>{% for other in busy %}<li>{{ other.time }} · {% if other.private %}a private event{% else %}{{ other|team_tag }}, {{ other|matchup }} ({{ other.site }}){% endif %}</li>{% endfor %}</ul>
     You can still send a request, but {{ SITE }} may not be able to make both.
   </div>
   {% endif %}
