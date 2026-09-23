@@ -1,7 +1,7 @@
-"""FCIAC varsity schedules, read from the CIAC master schedule pages that fciac.net/schedules links to.
+"""Norwalk High varsity schedules, read from the CIAC master schedule pages that fciac.net/schedules links to.
 
 There is no feed, so this reads the HTML table (date, time, type, home, away, site) for each in-season sport
-and keeps the games that involve an FCIAC school. The CIAC site is sometimes slow (minutes per sport), so
+and keeps the games Norwalk plays in. The CIAC site is sometimes slow (minutes per sport), so
 syncing runs in a background thread and page views only ever read the database.
 """
 import hashlib
@@ -29,11 +29,7 @@ SPORTS = {  # CIAC SportGenderListID: (name, season); ids from the links on fcia
     47: ("Girls Track", "spring"), 31: ("Boys Volleyball", "spring"),
 }
 SEASON_MONTHS = {"fall": {8, 9, 10, 11}, "winter": {11, 12, 1, 2, 3}, "spring": {3, 4, 5, 6}}
-SCHOOLS = {  # as the CIAC tables spell them
-    "Bridgeport Central", "Danbury", "Darien", "Fairfield Ludlowe", "Fairfield Warde", "Greenwich",
-    "Brien McMahon", "New Canaan", "Norwalk", "Ridgefield", "St. Joseph", "Stamford", "Staples", "Trumbull",
-    "Westhill", "Wilton",
-}
+TEAMS = {"Norwalk", "Norwalk/Brien McMahon"}  # as the CIAC tables spell them; the second is a co-op team
 EVERY = 6 * 3600  # seconds between syncs
 ROW = re.compile(r"<tr[^>]*>(.*?)</tr>", re.S)
 CELL = re.compile(r"<td[^>]*>(.*?)</td>", re.S)
@@ -82,7 +78,7 @@ def sync_sport(db, sport_id, page):
     for day, t, kind, home, away, site in parse(page):
         t = "TBA" if t == "12:01 AM" else t  # the CIAC site's placeholder for "time not set"
         teams = {home, *(a.strip() for a in away.split(","))}
-        if not teams & SCHOOLS:
+        if not teams & TEAMS:
             continue
         seen[day, home, away] += 1  # doubleheaders: same teams, same day
         ident = f"{sport_id}|{day}|{home}|{away}|{seen[day, home, away]}"  # not time or site: those get changed

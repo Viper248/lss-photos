@@ -5,7 +5,7 @@
 <main class="wrap page">
   <p class="eyebrow gold">Book a game</p>
   <h1>Game calendar</h1>
-  <p class="desc">Every FCIAC varsity game, straight from the CIAC schedule. Want {{ SITE }} at a game?
+  <p class="desc">Every Norwalk High varsity game, straight from the CIAC schedule. Want {{ SITE }} at a game?
     Pick it and send a request; you'll get a link that shows when it's accepted.</p>
   <div class="bar"></div>
 
@@ -14,16 +14,12 @@
     <input type="hidden" name="m" value="{{ month.strftime('%Y-%m') }}">
     <input type="hidden" name="d" value="{{ day.isoformat() }}">
     <div class="layers" role="group" aria-label="Show on the calendar">
-      <label class="layer"><input type="checkbox" name="layer" value="fciac"{{ ' checked' if 'fciac' in layers }}><span class="dot"></span>FCIAC schedule</label>
+      <label class="layer"><input type="checkbox" name="layer" value="fciac"{{ ' checked' if 'fciac' in layers }}><span class="dot"></span>Norwalk schedule</label>
       <label class="layer lss"><input type="checkbox" name="layer" value="lss"{{ ' checked' if 'lss' in layers }}><span class="dot"></span>{{ SITE }} bookings</label>
     </div>
     <select name="sport" aria-label="Sport">
       <option value="">All sports</option>
       {% for s in sports %}<option value="{{ s.sport_id }}"{{ ' selected' if s.sport_id == sport }}>{{ s.sport }}</option>{% endfor %}
-    </select>
-    <select name="school" aria-label="School">
-      <option value="">All schools</option>
-      {% for s in SCHOOLS %}<option{{ ' selected' if s == school }}>{{ s }}</option>{% endfor %}
     </select>
     <noscript><button class="btn">Show</button></noscript>
   </form>
@@ -78,7 +74,7 @@
       {% elif not layers %}
       <p class="none">Turn on a layer above to see games.</p>
       {% elif syncing and not sports %}
-      <p class="none">Loading the FCIAC schedule. Check back in a few minutes.</p>
+      <p class="none">Loading the Norwalk schedule. Check back in a few minutes.</p>
       {% else %}
       <p class="none">No {{ 'booked ' if 'fciac' not in layers }}games this day.</p>
       {% endif %}

@@ -147,7 +147,7 @@ assert c.get("/admin").status_code == 302  # deleted account is signed out
 sam.post("/admin/logout")
 assert sam.get("/admin").status_code == 302
 
-# --- FCIAC calendar: sync keeps FCIAC games, booking requests go pending -> accepted
+# --- game calendar: sync keeps Norwalk's games, booking requests go pending -> accepted
 def master(*rows):  # a CIAC master schedule page with these (date, time, type, home, away, site) rows
     cells = "".join("<tr>" + "".join(f'<td id="x">{c}</td>' for c in (f"{d:%m/%d/%Y}", *r)) + "</tr>" for d, *r in rows)
     return f"<table><tr><th>GameDate</th><th>Time</th></tr>{cells}</table>"
@@ -155,25 +155,27 @@ def master(*rows):  # a CIAC master schedule page with these (date, time, type, 
 
 today = site.local_today()
 soon, later, gone_day = today + timedelta(days=2), today + timedelta(days=3), today - timedelta(days=5)
-page = master((soon, "4:00 PM", "League", "Darien", "Greenwich", "Darien High School - Stadium"),
-              (soon, "12:01 AM", "Non-League", "Staples", "Hamden", "Staples - Field"),
-              (soon, "Postponed", "League", "Wilton", "Trumbull", "Wilton - Turf"),
-              (later, "1:00 PM", "League", "Cheshire", "Hamden", "not FCIAC"),
-              (later, "10:00 AM", "League", "Darien", "Ridgefield", "DH game 1"),
-              (later, "1:00 PM", "League", "Darien", "Ridgefield", "DH game 2"),
-              (gone_day, "4:00 PM", "League", "Norwalk", "Stamford &amp; Co", "past"))
-assert fciac.sync_sport(db, 3, page) == 6  # Cheshire vs Hamden isn't FCIAC; the doubleheader stays two games
+page = master((soon, "4:00 PM", "League", "Norwalk", "Greenwich", "Norwalk High School - Stadium"),
+              (soon, "12:01 AM", "Non-League", "Staples", "Norwalk", "Staples - Field"),
+              (soon, "Postponed", "League", "Wilton", "Staples, Norwalk/Brien McMahon", "Wilton - Pool"),
+              (soon, "4:00 PM", "League", "Darien", "Ridgefield", "not Norwalk"),
+              (soon, "5:00 PM", "League", "Brien McMahon", "Trumbull", "McMahon alone isn't Norwalk"),
+              (later, "10:00 AM", "League", "Norwalk", "Ridgefield", "DH game 1"),
+              (later, "1:00 PM", "League", "Norwalk", "Ridgefield", "DH game 2"),
+              (gone_day, "4:00 PM", "League", "Stamford &amp; Co", "Norwalk", "past"))
+assert fciac.sync_sport(db, 3, page) == 6  # only Norwalk (and its co-op); the doubleheader stays two games
 games = {r[0]: r for r in db.execute("select site, time, sort, sport from games")}
-assert games["Staples - Field"][1] == "TBA" and games["Darien High School - Stadium"][2] == "16:00"
+assert "not Norwalk" not in games and "McMahon alone isn't Norwalk" not in games and "Wilton - Pool" in games
+assert games["Staples - Field"][1] == "TBA" and games["Norwalk High School - Stadium"][2] == "16:00"
 assert games["past"][3] == "Field Hockey" and fciac.called_off("Postponed") and not fciac.called_off("TBA")
-game_id = db.execute("select id from games where site like 'Darien High%'").fetchone()[0]
+game_id = db.execute("select id from games where site like 'Norwalk High%'").fetchone()[0]
 past_id = db.execute("select id from games where site = 'past'").fetchone()[0]
 
 cal = text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}"))
-assert "Greenwich at Darien" in cal and "Hamden at Staples" in cal and f'/calendar/game/{game_id}"' in cal
-assert "Wilton" in cal and "Book LSS Photos" in cal
-assert "Greenwich at Darien" not in text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}&f=1&layer=fciac&school=Wilton"))
-assert "Greenwich at Darien" not in text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}&f=1&layer=lss"))  # nothing booked yet
+assert "Greenwich at Norwalk" in cal and "Norwalk at Staples" in cal and f'/calendar/game/{game_id}"' in cal
+assert "Wilton meet: Staples, Norwalk/Brien McMahon" in cal and "Book LSS Photos" in cal and "Darien" not in cal
+assert "Greenwich at Norwalk" not in text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}&f=1&layer=fciac&sport=7"))
+assert "Greenwich at Norwalk" not in text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}&f=1&layer=lss"))  # nothing booked yet
 
 visitor = site.app.test_client()
 visitor.environ_base["REMOTE_ADDR"] = "10.1.1.1"
@@ -200,13 +202,13 @@ sam.post("/admin/bookings", data={"id": booking_id, "action": "accept", "reply":
 status = text(visitor.get(status_url))
 assert "Accepted: LSS Photos will be there" in status and "See you on the home sideline" in status
 only_lss = text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}&f=1&layer=lss"))
-assert "Greenwich at Darien" in only_lss and "LSS Photos will be there" in only_lss and "Hamden at Staples" not in only_lss
+assert "Greenwich at Norwalk" in only_lss and "LSS Photos will be there" in only_lss and "Norwalk at Staples" not in only_lss
 assert "will be there" not in text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}&f=1&layer=fciac"))  # schedule layer alone
 
-fciac.sync_sport(db, 3, master((later, "10:00 AM", "League", "Darien", "Ridgefield", "DH game 1")))  # games dropped
+fciac.sync_sport(db, 3, master((later, "10:00 AM", "League", "Norwalk", "Ridgefield", "DH game 1")))  # games dropped
 assert db.execute("select gone from games where id = ?", (game_id,)).fetchone()[0] == 1  # booked: kept, marked gone
 assert not db.execute("select 1 from games where site = 'Staples - Field'").fetchone()  # unbooked: deleted
-assert "no longer on the FCIAC schedule" in text(visitor.get(status_url))
+assert "no longer on the schedule" in text(visitor.get(status_url))
 visitor.post(status_url)
 assert "You canceled this request" in text(visitor.get(status_url))
 

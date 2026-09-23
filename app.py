@@ -211,7 +211,7 @@ def month_arg(value, fallback):
         return fallback
 
 
-app.jinja_env.globals.update(called_off=fciac.called_off, SCHOOLS=sorted(fciac.SCHOOLS))
+app.jinja_env.globals.update(called_off=fciac.called_off)
 
 
 @app.template_filter()
@@ -230,13 +230,11 @@ def calendar_page():
     except ValueError:
         day = today if today.replace(day=1) == month else month
     layers = set(a.getlist("layer")) if "f" in a else {"fciac", "lss"}  # f: the filter form was submitted
-    sport, school = a.get("sport", type=int), a.get("school", "")
+    sport = a.get("sport", type=int)
     weeks = Calendar(firstweekday=6).monthdatescalendar(month.year, month.month)  # Sunday first
     sql, args = GAMES + " where not g.gone and g.date between ? and ?", [weeks[0][0].isoformat(), weeks[-1][-1].isoformat()]
     if sport:
         sql, args = sql + " and g.sport_id = ?", args + [sport]
-    if school:
-        sql, args = sql + " and (g.home = ? or instr(', ' || g.away || ',', ', ' || ? || ',') > 0)", args + [school, school]
     games = q(sql + " order by g.date, g.sort, g.sport", *args).fetchall()
     if "fciac" not in layers:  # bookings layer alone: only the games LSS is booked for or asked about
         games = [gm for gm in games if gm["booked"]] if "lss" in layers else []
@@ -249,9 +247,9 @@ def calendar_page():
         if gm["booked"]:
             d[gm["booked"]] += 1
     s = settings()
-    keep = {"f": 1, "layer": sorted(layers), "sport": sport, "school": school or None}  # carried by every link
+    keep = {"f": 1, "layer": sorted(layers), "sport": sport}  # carried by every link
     return render_template("calendar.html", keep=keep, weeks=weeks, month=month, day=day, this_day=today, days=days, layers=layers,
-                           games=[gm for gm in games if gm["date"] == day.isoformat()], sport=sport, school=school,
+                           games=[gm for gm in games if gm["date"] == day.isoformat()], sport=sport,
                            sports=q("select distinct sport_id, sport from games order by sport").fetchall(),
                            prev=(month - timedelta(days=1)).replace(day=1), next=(month + timedelta(days=31)).replace(day=1),
                            synced=s.get("sync_at"), syncing=s.get("sync_running") == "1")

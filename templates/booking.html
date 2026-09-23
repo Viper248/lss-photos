@@ -15,7 +15,7 @@
     <p class="tag">{{ b.sport }}</p>
     <h2>{{ b|matchup }}</h2>
     <p class="meta"><span><svg class="i"><use href="#calendar"/></svg>{{ b.date|nice_date }}, {{ b.time }}</span><span>{{ b.site }}</span></p>
-    {% if b.gone %}<p class="flash">This game is no longer on the FCIAC schedule. It may have been moved or canceled.</p>{% endif %}
+    {% if b.gone %}<p class="flash">This game is no longer on the schedule. It may have been moved or canceled.</p>{% endif %}
     <p class="desc">Requested by {{ b.name }}{% if b.note %}: “{{ b.note }}”{% endif %}</p>
   </section>
 

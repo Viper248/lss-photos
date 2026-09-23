@@ -4,7 +4,7 @@
 <p class="tag">{{ b.sport }}</p>
 <b class="fg">{{ b|matchup }}</b>
 <p class="meta"><span><svg class="i"><use href="#calendar"/></svg>{{ b.date|nice_date }}, {{ b.time }}</span><span>{{ b.site }}</span></p>
-{% if b.gone %}<p class="bad">No longer on the FCIAC schedule: it may have moved.</p>{% endif %}
+{% if b.gone %}<p class="bad">No longer on the schedule: it may have moved.</p>{% endif %}
 {% endmacro %}
 {% macro who(b) %}
 <p><b class="fg">{{ b.name }}</b>
@@ -72,9 +72,9 @@
 </table>
 {% endif %}
 
-<h2 class="sub">FCIAC schedule</h2>
+<h2 class="sub">Norwalk schedule</h2>
 <form class="panel sync" method="post">
-  <p>{{ games }} FCIAC varsity games for sports in season.
+  <p>{{ games }} Norwalk High varsity games for sports in season.
     {% if sync.sync_running == '1' %}<b class="gold">Checking the CIAC site now…</b>
     {% elif sync.sync_at %}Last checked <time datetime="{{ sync.sync_at }}">{{ sync.sync_at[:10] }}</time>; it checks again every 6 hours.
     {% else %}Not checked yet.{% endif %}</p>
