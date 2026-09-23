@@ -1,5 +1,5 @@
 {% extends "admin_base.html" %}
-{% from "macros.html" import section_options %}
+{% from "macros.html" import section_options, date_field %}
 {% block title %}Upload | Admin | {{ SITE }}{% endblock %}
 {% block admin %}
 <h1>Upload photos</h1>
@@ -15,7 +15,7 @@
   <div class="new">
     <label>Title <input name="title" placeholder="Field Hockey vs. Greenwich"></label>
     <label>Section <select name="section_id">{{ section_options(sections) }}</select></label>
-    <label>Date <input type="date" name="date" value="{{ today() }}"></label>
+    <label>Date {{ date_field("date", today()) }}</label>
     <label>Description <textarea name="description" rows="2"></textarea></label>
   </div>
   <label>Photos <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" multiple required></label>

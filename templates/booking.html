@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Your booking request | {{ SITE }}{% endblock %}
+{% block meta %}<meta name="robots" content="noindex">{% endblock %}
+{% block body %}
+{% set headline = {"pending": "Waiting for a reply", "accepted": "Accepted: " ~ SITE ~ " will be there",
+                   "declined": "Sorry, " ~ SITE ~ " can't make this one", "canceled": "You canceled this request"} %}
+<main class="wrap page narrow">
+  <p class="eyebrow gold">Booking request</p>
+  <h1 class="status-{{ b.status }}">{{ headline[b.status] }}</h1>
+  <div class="bar"></div>
+
+  {% if b.reply %}<blockquote class="reply"><small>Note from {{ SITE }}</small>{{ b.reply }}</blockquote>{% endif %}
+
+  <section class="panel">
+    <p class="tag">{{ b.sport }}</p>
+    <h2>{{ b|matchup }}</h2>
+    <p class="meta"><span><svg class="i"><use href="#calendar"/></svg>{{ b.date|nice_date }}, {{ b.time }}</span><span>{{ b.site }}</span></p>
+    {% if b.gone %}<p class="flash">This game is no longer on the FCIAC schedule. It may have been moved or canceled.</p>{% endif %}
+    <p class="desc">Requested by {{ b.name }}{% if b.note %}: “{{ b.note }}”{% endif %}</p>
+  </section>
+
+  {% if b.status == 'pending' %}
+  <p class="desc">Bookmark this page: it's where you'll see {{ SITE }}'s answer.</p>
+  {% endif %}
+  <div class="row">
+    <button class="btn ghost" type="button" id="copy">Copy link to this page</button>
+    {% if b.status in ('pending', 'accepted') %}
+    <form method="post" onsubmit="return confirm('Cancel this request?')"><button class="btn ghost">Cancel request</button></form>
+    {% endif %}
+    <a class="link" href="{{ url_for('calendar_page', m=b.date[:7], d=b.date) }}">Back to the calendar</a>
+  </div>
+</main>
+<script>
+document.getElementById('copy').onclick = async e => {
+  try { await navigator.clipboard.writeText(location.href); e.target.textContent = 'Link copied'; }
+  catch { prompt('Copy this link:', location.href); }
+};
+</script>
+{% endblock %}

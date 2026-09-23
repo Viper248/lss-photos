@@ -4,8 +4,8 @@ services:
   gallery:
     image: python:3.12-slim
     working_dir: /app
-    # trusted-proxy flags: links built behind the tunnel say https://
-    command: sh -c "pip install -q -r requirements.txt && waitress-serve --port=8080 --trusted-proxy='*' --trusted-proxy-headers=x-forwarded-proto app:app"
+    # trusted-proxy flags: links built behind the tunnel say https://. Body limit 5 GB (buffered on the 27 GB system disk): big batches on your network
+    command: sh -c "pip install -q -r requirements.txt && waitress-serve --port=8080 --max-request-body-size=5368709120 --trusted-proxy='*' --trusted-proxy-headers=x-forwarded-proto app:app"
     environment:
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}"
     volumes:

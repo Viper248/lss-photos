@@ -3,9 +3,9 @@
 <main class="wrap page">
   <div class="admin-top">
     <nav class="tabs" aria-label="Admin">
-      {% for endpoint, label in [('admin', 'Galleries'), ('upload_page', 'Upload'), ('admin_sections', 'Sections'),
+      {% for endpoint, label in [('admin', 'Galleries'), ('admin_bookings', 'Bookings'), ('upload_page', 'Upload'), ('admin_sections', 'Sections'),
                                  ('admin_links', 'Links'), ('admin_accounts', 'Accounts'), ('admin_logins', 'Login history')] %}
-      <a href="{{ url_for(endpoint) }}"{% if request.endpoint == endpoint or (endpoint == 'admin' and request.endpoint == 'admin_gallery') %} aria-current="page"{% endif %}>{{ label }}</a>
+      <a href="{{ url_for(endpoint) }}"{% if request.endpoint == endpoint or (endpoint == 'admin' and request.endpoint == 'admin_gallery') %} aria-current="page"{% endif %}>{{ label }}{% if endpoint == 'admin_bookings' and g.pending %} <span class="count" aria-label="{{ g.pending }} waiting">{{ g.pending }}</span>{% endif %}</a>
       {% endfor %}
     </nav>
     <form class="who" method="post" action="{{ url_for('logout') }}">
@@ -22,6 +22,16 @@ document.addEventListener('click', e => {  // buttons with data-confirm ask firs
 });
 document.querySelectorAll('time[datetime]').forEach(t => {  // UTC from the server, shown in the viewer's time zone
   t.textContent = new Date(t.dateTime).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'});
+});
+document.querySelectorAll('.date-pick input').forEach(input => {  // "2026-09-23" shown as "September 23rd, 2026"
+  const show = input.nextElementSibling, suffix = d => d > 3 && d < 21 ? 'th' : {1: 'st', 2: 'nd', 3: 'rd'}[d % 10] || 'th';
+  const render = () => {
+    const [y, m, d] = input.value.split('-').map(Number);
+    show.textContent = y ? `${new Date(y, m - 1, d).toLocaleString('en-US', {month: 'long'})} ${d}${suffix(d)}, ${y}` : 'Pick a date';
+  };
+  input.addEventListener('input', render);
+  input.addEventListener('click', () => { try { input.showPicker(); } catch {} });
+  render();
 });
 </script>
 {% block script %}{% endblock %}

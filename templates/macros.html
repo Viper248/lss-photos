@@ -4,3 +4,7 @@
 {% for sub in s.subs %}<option value="{{ sub.id }}"{{ ' selected' if sub.id == selected }}>{{ s.name }} › {{ sub.name }}</option>{% endfor %}
 {% endfor %}
 {% endmacro %}
+
+{% macro date_field(name, value) %}
+<span class="date-pick"><input type="date" name="{{ name }}" value="{{ value or '' }}"><span class="date-show" aria-hidden="true"></span><svg class="i"><use href="#calendar"/></svg></span>
+{% endmacro %}

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Book {{ SITE }}: {{ gm|matchup }} | {{ SITE }}{% endblock %}
+{% block body %}
+<main class="wrap page narrow">
+  <a class="back" href="{{ url_for('calendar_page', m=gm.date[:7], d=gm.date) }}"><svg class="i"><use href="#arrow-left"/></svg>Back to the calendar</a>
+  <p class="eyebrow gold">{{ gm.sport }}{% if gm.kind %} · {{ gm.kind }}{% endif %}</p>
+  <h1>{{ gm|matchup }}</h1>
+  <p class="meta">
+    <span><svg class="i"><use href="#calendar"/></svg>{{ gm.date|nice_date }}, {{ gm.time }}</span>
+    <span>{{ gm.site }}</span>
+  </p>
+  <div class="bar"></div>
+
+  {% if gm.booked == 'accepted' %}<p class="flash">{{ SITE }} is already booked for this game. You can still ask for photos of your athlete.</p>
+  {% elif gm.booked == 'pending' %}<p class="flash">Someone has already asked about this game. Add your request too.</p>{% endif %}
+
+  {% if not open_for_requests %}
+  <p class="flash">This game {{ 'was ' ~ gm.time|lower if called_off(gm.time) else 'has already been played' }}, so it can't be booked.</p>
+  {% else %}
+  {% if error %}<p class="flash" role="alert">{{ error }}</p>{% endif %}
+  <form class="form" method="post">
+    <label>Your name <input name="name" value="{{ form.get('name', '') }}" autocomplete="name" maxlength="100" required></label>
+    <label>Email <input type="email" name="email" value="{{ form.get('email', '') }}" autocomplete="email" maxlength="200"></label>
+    <label>Phone <input type="tel" name="phone" value="{{ form.get('phone', '') }}" autocomplete="tel" maxlength="40"></label>
+    <label>Who should we photograph? <textarea name="note" rows="3" maxlength="1000" placeholder="Athlete's name, number and team, and anything else we should know">{{ form.get('note', '') }}</textarea></label>
+    <label class="hp" aria-hidden="true">Website <input name="website" tabindex="-1" autocomplete="off"></label>
+    <div class="row"><button class="btn">Send request</button><span>Email or phone, so we can reach you.</span></div>
+  </form>
+  <p class="fine">After sending you'll get a private link that shows whether {{ SITE }} accepted.</p>
+  {% endif %}
+</main>
+{% endblock %}

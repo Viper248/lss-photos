@@ -1,0 +1,84 @@
+{% extends "admin_base.html" %}
+{% block title %}Bookings | Admin | {{ SITE }}{% endblock %}
+{% macro game(b) %}
+<p class="tag">{{ b.sport }}</p>
+<b class="fg">{{ b|matchup }}</b>
+<p class="meta"><span><svg class="i"><use href="#calendar"/></svg>{{ b.date|nice_date }}, {{ b.time }}</span><span>{{ b.site }}</span></p>
+{% if b.gone %}<p class="bad">No longer on the FCIAC schedule: it may have moved.</p>{% endif %}
+{% endmacro %}
+{% macro who(b) %}
+<p><b class="fg">{{ b.name }}</b>
+  {% if b.email %}· <a class="link gold" href="mailto:{{ b.email }}">{{ b.email }}</a>{% endif %}
+  {% if b.phone %}· <a class="link gold" href="tel:{{ b.phone }}">{{ b.phone }}</a>{% endif %}</p>
+{% if b.note %}<p class="desc">“{{ b.note }}”</p>{% endif %}
+<p class="fine">Asked <time datetime="{{ b.created }}">{{ b.created[:10] }}</time> · <a class="link" href="{{ url_for('booking_status', token=b.token) }}" target="_blank">their status page</a></p>
+{% endmacro %}
+{% block admin %}
+<h1>Bookings</h1>
+<p class="desc">Requests from the <a class="link gold" href="{{ url_for('calendar_page') }}">game calendar</a>.
+  Accepting shows the game as booked on the calendar, and the person sees your answer (and note) on their status page.
+  There's no automatic email, so reach out with the contact details if you need to.</p>
+<div class="bar"></div>
+
+<h2 class="sub">Waiting for you{% if pending %} ({{ pending|length }}){% endif %}</h2>
+{% for b in pending %}
+<section class="panel booking">
+  <div>{{ game(b) }}
+    {% for other in booked_days.get(b.date, []) if other.game_id != b.game_id %}
+    <p class="flash">You're already booked that day: {{ other.time }} {{ other.sport }}, {{ other|matchup }}</p>
+    {% endfor %}
+  </div>
+  <div>{{ who(b) }}
+    <form class="reply-form" method="post">
+      <input type="hidden" name="id" value="{{ b.id }}">
+      <label>Note to them (optional) <textarea name="reply" rows="2" placeholder="See you there! I'll be on the home sideline."></textarea></label>
+      <div class="row"><button class="btn" name="action" value="accept">Accept</button><button class="btn ghost" name="action" value="decline">Decline</button></div>
+    </form>
+  </div>
+</section>
+{% else %}
+<p class="none">No requests waiting.</p>
+{% endfor %}
+
+<h2 class="sub">Booked, upcoming</h2>
+{% for b in accepted %}
+<section class="panel booking">
+  <div>{{ game(b) }}</div>
+  <div>{{ who(b) }}
+    {% if b.reply %}<p class="fine">Your note: “{{ b.reply }}”</p>{% endif %}
+    <form method="post" class="row">
+      <input type="hidden" name="id" value="{{ b.id }}">
+      <button class="link" name="action" value="reopen">Move back to waiting</button>
+      <button class="link" name="action" value="decline" data-confirm="Cancel this booking? They'll see it as declined.">Decline after all</button>
+    </form>
+  </div>
+</section>
+{% else %}
+<p class="none">Nothing booked yet.</p>
+{% endfor %}
+
+{% if past %}
+<h2 class="sub">Past, declined and canceled</h2>
+<table class="table">
+  <tr><th>Game</th><th class="hide-sm">Who</th><th>Status</th><th></th></tr>
+  {% for b in past %}
+  <tr>
+    <td><span class="fg">{{ b|matchup }}</span><br>{{ b.sport }} · {{ b.date|nice_date }}</td>
+    <td class="hide-sm">{{ b.name }}</td>
+    <td>{{ 'played' if b.status == 'accepted' else b.status }}</td>
+    <td class="actions">{% if b.status != 'accepted' %}<form method="post"><input type="hidden" name="id" value="{{ b.id }}"><button class="link" name="action" value="reopen">Reopen</button></form>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<h2 class="sub">FCIAC schedule</h2>
+<form class="panel sync" method="post">
+  <p>{{ games }} FCIAC varsity games for sports in season.
+    {% if sync.sync_running == '1' %}<b class="gold">Checking the CIAC site now…</b>
+    {% elif sync.sync_at %}Last checked <time datetime="{{ sync.sync_at }}">{{ sync.sync_at[:10] }}</time>; it checks again every 6 hours.
+    {% else %}Not checked yet.{% endif %}</p>
+  {% if sync.sync_error %}<p class="bad">Last check had problems: {{ sync.sync_error }}</p>{% endif %}
+  <div class="row"><button class="btn ghost" name="action" value="sync">Check now</button></div>
+</form>
+{% endblock %}

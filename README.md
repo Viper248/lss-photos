@@ -4,8 +4,20 @@ Public photo galleries (thumbnail grid, full-size viewer with download and share
 `/admin` with its own accounts. Flask + SQLite + Pillow, served by waitress.
 Photos, the database and the login-cookie key live in `data/`, which is not in git. Back that folder up.
 
+**Game calendar** (`/calendar`, "Calendar" in the header): a month view with two layers you can switch on and off.
+- **FCIAC schedule**: every varsity game involving an FCIAC school, for sports in season. There's no feed, so
+  `fciac.py` reads the CIAC master schedule pages that fciac.net/schedules links to, in a background thread,
+  when the site starts and then every 6 hours. Filter by sport or school.
+- **LSS bookings** on top: visitors pick a game and send a request (name, email or phone, who to photograph).
+  The calendar then shows the game as Requested, or Booked once it's accepted; names are never shown publicly.
+  Each requester gets a private status page with the answer and any note, and can cancel from there.
+  There is no email: the site has no mail server, so the status page is how they find out.
+- If a game disappears from the CIAC schedule, requests for it are kept and flagged "no longer on the schedule".
+
 **Admin** (log in at `/admin`):
 - **Galleries**: every gallery, grouped by section, with edit / add photos / view / delete
+- **Bookings**: requests waiting (the tab shows how many), with accept / decline and an optional note;
+  warns when you're already booked that day. Also shows when the FCIAC schedule was last read, with "Check now".
 - **Upload**: new gallery or more photos for an existing one
 - **Sections**: add, rename, reorder and delete the home-page headings (Sports Galleries, My Adventures…)
   and their subsections (Baseball, Field Hockey…). Visitors filter a heading's galleries by subsection.
@@ -82,6 +94,9 @@ tunnel token.
   `docker compose exec gallery python -c "import sqlite3; c = sqlite3.connect('data/gallery.db'); c.execute('delete from users'); c.commit()"`
   then `docker compose restart gallery`. `admin` / `ADMIN_PASSWORD` works again (galleries are untouched).
 - **Back up `data/`** (photos + `gallery.db`). That folder is the whole site's content.
+- **FCIAC schedule looks stale or empty?** Admin → Bookings shows the last check and any errors. The sport list
+  (CIAC ids, seasons) and the 16 member schools are at the top of `fciac.py`, taken from fciac.net/schedules;
+  if the league adds a school or CIAC renames one, update them there.
 - **502 from Cloudflare** means the `gallery` container isn't running, or the hostname's service isn't `HTTP` → `gallery:8080`.
 - **Deleted photos** can stay in Cloudflare's cache for a while. To remove one right away: Caching → Purge Cache → its URL.
 - Cloudflare's free plan limits each upload request to 100 MB. That's fine: the admin page uploads one photo per request.

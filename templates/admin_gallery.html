@@ -1,5 +1,5 @@
 {% extends "admin_base.html" %}
-{% from "macros.html" import section_options %}
+{% from "macros.html" import section_options, date_field %}
 {% block title %}Edit {{ gal.title }} | {{ SITE }}{% endblock %}
 {% block admin %}
 <a class="back" href="{{ url_for('admin') }}"><svg class="i"><use href="#arrow-left"/></svg>All galleries</a>
@@ -14,7 +14,7 @@
 <form class="form" method="post">
   <label>Title <input name="title" value="{{ gal.title }}" required></label>
   <label>Section <select name="section_id">{{ section_options(sections, gal.section_id) }}</select></label>
-  <label>Date <input type="date" name="date" value="{{ gal.date }}"></label>
+  <label>Date {{ date_field("date", gal.date) }}</label>
   <label>Description <textarea name="description" rows="2">{{ gal.description }}</textarea></label>
   <div class="row">
     <button class="btn">Save</button>

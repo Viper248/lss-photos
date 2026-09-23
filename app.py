@@ -1,17 +1,22 @@
-"""Photo gallery site: public galleries + /admin (user accounts) for uploads and site settings. Run/deploy: see README.md."""
+"""Photo gallery site: public galleries, FCIAC game calendar with booking requests, and /admin (user accounts)
+for uploads, bookings and site settings. Run/deploy: see README.md."""
 import io
 import os
 import re
 import secrets
 import sqlite3
 import uuid
+from calendar import Calendar
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from flask import (Flask, abort, flash, g, redirect, render_template, request, send_from_directory, session,
                    url_for)
 from PIL import Image, ImageOps
 from werkzeug.security import check_password_hash, generate_password_hash
+
+import fciac
 
 SITE, TAGLINE = "LSS Photos", "Photography"
 DEFAULT_SECTIONS = [  # (heading, eyebrow, divider label above the section, subsections); editable in /admin/sections
@@ -32,6 +37,9 @@ LINKS = {  # key: (label, placeholder, what a bare handle is appended to); shown
 FORMATS = {"JPEG": ".jpg", "MPO": ".jpg", "PNG": ".png", "WEBP": ".webp"}
 THUMB_PX = 800  # long edge; sharp in the grid on retina screens, ~100 KB each
 MAX_FAILS, FAIL_WINDOW = 10, timedelta(minutes=15)  # per IP, then logins are refused for a while
+MAX_REQUESTS = 5  # booking requests per IP per hour
+LOCAL = ZoneInfo("America/New_York")  # game times on the CIAC site are local
+EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 DATA = Path(os.environ.get("DATA_DIR") or Path(__file__).parent / "data")
 MEDIA, DB = DATA / "media", DATA / "gallery.db"
 
@@ -52,6 +60,15 @@ create table if not exists logins (id integer primary key, at text not null, use
     ok integer not null, ip text not null, agent text not null);
 create index if not exists logins_by_ip on logins (ip, at);
 create table if not exists settings (key text primary key, value text not null);
+create table if not exists games (id integer primary key, key text not null unique, sport_id integer not null,
+    sport text not null, date text not null, time text not null, sort text not null, kind text not null,
+    home text not null, away text not null, site text not null, seen text not null, gone integer not null default 0);
+create index if not exists games_by_date on games (date, sort);
+create table if not exists bookings (id integer primary key, game_id integer not null, token text not null unique,
+    name text not null, email text not null, phone text not null, note text not null,
+    status text not null default 'pending', reply text not null default '', ip text not null,
+    created text not null, decided text);
+create index if not exists bookings_by_game on bookings (game_id);
 """)
 con.execute("begin")  # the one-time setup below happens all at once or not at all
 if not con.execute("select 1 from sections").fetchone():
@@ -88,6 +105,14 @@ GALLERIES = """select g.*, coalesce(s.parent_id, s.id) as top_id, coalesce(p.nam
     from galleries g left join sections s on s.id = g.section_id left join sections p on p.id = s.parent_id"""
 NEWEST = " order by g.date desc, g.id desc"
 DUMMY_HASH = generate_password_hash("x")  # unknown usernames take as long to reject as wrong passwords
+# Each game's booking status: accepted if any request was accepted, else pending if any is waiting.
+GAMES = """select g.*, (select case when sum(status = 'accepted') then 'accepted' when sum(status = 'pending')
+    then 'pending' end from bookings where game_id = g.id) as booked from games g"""
+BOOKINGS = """select b.*, g.sport, g.date, g.time, g.sort, g.home, g.away, g.site, g.gone
+    from bookings b join games g on g.id = b.game_id"""
+
+if os.environ.get("FCIAC_SYNC", "1") != "0":
+    fciac.start(DB)
 
 app = Flask(__name__)
 app.config.update(SECRET_KEY=KEY_FILE.read_text().strip(), SESSION_COOKIE_SAMESITE="Lax",
@@ -173,6 +198,100 @@ def media(path):
     return send_from_directory(MEDIA, path, max_age=31536000)  # random names, never change
 
 
+# --- calendar: FCIAC games with LSS bookings on top ---
+
+def local_today():
+    return datetime.now(LOCAL).date()
+
+
+def month_arg(value, fallback):
+    try:
+        return date.fromisoformat(value + "-01")
+    except (TypeError, ValueError):
+        return fallback
+
+
+app.jinja_env.globals.update(called_off=fciac.called_off, SCHOOLS=sorted(fciac.SCHOOLS))
+
+
+@app.template_filter()
+def matchup(g):
+    if not g["away"]:
+        return g["home"]
+    return f"{g['away']} at {g['home']}" if "," not in g["away"] else f"{g['home']} meet: {g['away']}"
+
+
+@app.get("/calendar")
+def calendar_page():
+    a, today = request.args, local_today()
+    month = month_arg(a.get("m"), today.replace(day=1))
+    try:
+        day = date.fromisoformat(a.get("d", ""))
+    except ValueError:
+        day = today if today.replace(day=1) == month else month
+    layers = set(a.getlist("layer")) if "f" in a else {"fciac", "lss"}  # f: the filter form was submitted
+    sport, school = a.get("sport", type=int), a.get("school", "")
+    weeks = Calendar(firstweekday=6).monthdatescalendar(month.year, month.month)  # Sunday first
+    sql, args = GAMES + " where not g.gone and g.date between ? and ?", [weeks[0][0].isoformat(), weeks[-1][-1].isoformat()]
+    if sport:
+        sql, args = sql + " and g.sport_id = ?", args + [sport]
+    if school:
+        sql, args = sql + " and (g.home = ? or instr(', ' || g.away || ',', ', ' || ? || ',') > 0)", args + [school, school]
+    games = q(sql + " order by g.date, g.sort, g.sport", *args).fetchall()
+    if "fciac" not in layers:  # bookings layer alone: only the games LSS is booked for or asked about
+        games = [gm for gm in games if gm["booked"]] if "lss" in layers else []
+    if "lss" not in layers:  # schedule layer alone: no booking marks
+        games = [dict(gm, booked=None) for gm in games]
+    days = {}
+    for gm in games:
+        d = days.setdefault(gm["date"], {"n": 0, "accepted": 0, "pending": 0})
+        d["n"] += 1
+        if gm["booked"]:
+            d[gm["booked"]] += 1
+    s = settings()
+    keep = {"f": 1, "layer": sorted(layers), "sport": sport, "school": school or None}  # carried by every link
+    return render_template("calendar.html", keep=keep, weeks=weeks, month=month, day=day, this_day=today, days=days, layers=layers,
+                           games=[gm for gm in games if gm["date"] == day.isoformat()], sport=sport, school=school,
+                           sports=q("select distinct sport_id, sport from games order by sport").fetchall(),
+                           prev=(month - timedelta(days=1)).replace(day=1), next=(month + timedelta(days=31)).replace(day=1),
+                           synced=s.get("sync_at"), syncing=s.get("sync_running") == "1")
+
+
+@app.route("/calendar/game/<int:game_id>", methods=["GET", "POST"])
+def book_game(game_id):
+    gm = q(GAMES + " where g.id = ? and not g.gone", game_id).fetchone() or abort(404)
+    open_for_requests = gm["date"] >= local_today().isoformat() and not fciac.called_off(gm["time"])
+    form, error = request.form, None
+    if request.method == "POST":
+        ip, hour_ago = client_ip(), (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(timespec="seconds")
+        name, email, phone = form.get("name", "").strip(), form.get("email", "").strip(), form.get("phone", "").strip()
+        if form.get("website"):  # hidden field only bots fill in
+            abort(400, "Request not sent.")
+        if not open_for_requests:
+            error = "This game can't be booked any more."
+        elif not name or not (email or phone):
+            error = "Please give your name and an email address or phone number."
+        elif email and not EMAIL.fullmatch(email):
+            error = "That email address doesn't look right."
+        elif q("select count(*) from bookings where ip = ? and created > ?", ip, hour_ago).fetchone()[0] >= MAX_REQUESTS:
+            error = "Too many requests from here in the last hour. Please try again later."
+        else:
+            token = secrets.token_urlsafe(12)
+            q("insert into bookings (game_id, token, name, email, phone, note, ip, created) values (?, ?, ?, ?, ?, ?, ?, ?)",
+              game_id, token, name[:100], email[:200], phone[:40], form.get("note", "").strip()[:1000], ip, now())
+            return redirect(url_for("booking_status", token=token))
+    return render_template("book.html", gm=gm, open_for_requests=open_for_requests, form=form, error=error), 400 if error else 200
+
+
+@app.route("/booking/<token>", methods=["GET", "POST"])
+def booking_status(token):
+    b = q(BOOKINGS + " where b.token = ?", token).fetchone() or abort(404)
+    if request.method == "POST" and b["status"] in ("pending", "accepted"):
+        q("update bookings set status = 'canceled', decided = ? where id = ?", now(), b["id"])
+        return redirect(request.path)
+    return render_template("booking.html", b=b)
+
+
 # --- login ---
 
 def client_ip():
@@ -194,7 +313,10 @@ def admin_guard():
     uid = session.get("uid")
     user = uid and q("select * from users where id = ?", uid).fetchone()
     g.user = user if user and secrets.compare_digest(session.get("v", ""), user["password"][-16:]) else None
-    if g.user or request.endpoint == "login":
+    if g.user:
+        g.pending = q("select count(*) from bookings where status = 'pending'").fetchone()[0]  # for the tab
+        return None
+    if request.endpoint == "login":
         return None
     if request.method == "GET":
         return redirect(url_for("login", next=request.full_path.rstrip("?")))
@@ -261,29 +383,46 @@ def upload_page():
                            selected=request.args.get("g", type=int))
 
 
-@app.post("/admin/upload")
-def upload():  # one photo per request; the upload page loops over the selected files
-    f = request.files["photo"]
+def read_photo(f):  # -> (file bytes, extension, thumbnail), or None if it isn't a JPEG, PNG or WebP
     data = f.read()
     try:
         img = Image.open(io.BytesIO(data))
         ext = FORMATS[img.format]
         img.thumbnail((THUMB_PX, THUMB_PX))  # JPEGs decode at reduced scale, fast
-        thumb = ImageOps.exif_transpose(img)  # bake in the camera's rotation flag
+        return data, ext, ImageOps.exif_transpose(img)  # bake in the camera's rotation flag
     except Exception:
-        abort(400, f"{f.filename}: not a JPEG, PNG or WebP image.")
-    gid = request.form.get("gallery_id", type=int)
+        return None
+
+
+@app.post("/admin/upload")
+def upload():  # the upload page's script sends one photo per request; without it the browser sends them all at once
+    gid, bad = request.form.get("gallery_id", type=int), []
     if gid:
         q("select 1 from galleries where id = ?", gid).fetchone() or abort(404)
-    else:
-        gid = q("insert into galleries (title, section_id, date, description) values (?, ?, ?, ?)",
-                *gallery_fields()).lastrowid
-    name = uuid.uuid4().hex + ext
-    (MEDIA / "full" / name).write_bytes(data)
-    thumb.save(MEDIA / "thumb" / name, quality=82, icc_profile=thumb.info.get("icc_profile"))
-    q("insert into photos (gallery_id, file, name, w, h) values (?, ?, ?, ?, ?)",
-      gid, name, f.filename or name, *thumb.size)
-    return {"gallery_id": gid}
+    for f in request.files.getlist("photo"):
+        photo = read_photo(f)
+        if not photo:
+            bad.append(f.filename)
+            continue
+        data, ext, thumb = photo
+        if not gid:
+            gid = q("insert into galleries (title, section_id, date, description) values (?, ?, ?, ?)",
+                    *gallery_fields()).lastrowid
+        name = uuid.uuid4().hex + ext
+        (MEDIA / "full" / name).write_bytes(data)
+        thumb.save(MEDIA / "thumb" / name, quality=82, icc_profile=thumb.info.get("icc_profile"))
+        q("insert into photos (gallery_id, file, name, w, h) values (?, ?, ?, ?, ?)",
+          gid, name, f.filename or name, *thumb.size)
+    html = "text/html" in request.headers.get("Accept", "")  # a plain form post, not the upload script
+    if bad and not (html and gid):
+        abort(400, f"{', '.join(bad)}: not a JPEG, PNG or WebP image.")
+    if not gid:
+        abort(400, "Choose some photos to upload.")
+    if not html:
+        return {"gallery_id": gid}
+    if bad:
+        flash(f"Skipped {', '.join(bad)}: not a JPEG, PNG or WebP image.")
+    return redirect(url_for("admin_gallery", gid=gid))
 
 
 @app.route("/admin/g/<int:gid>", methods=["GET", "POST"])
@@ -371,7 +510,7 @@ def admin_links():
         label = LINKS[key][0]
         if not v:
             continue
-        if key == "email" and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", v):
+        if key == "email" and not EMAIL.fullmatch(v):
             errors.append(f"{label}: that doesn't look like an email address.")
         elif key == "phone" and len(re.sub(r"\D", "", v)) < 7:
             errors.append(f"{label}: enter the full phone number.")
@@ -446,6 +585,35 @@ def admin_logins():
     since = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(timespec="seconds")
     return render_template("admin_logins.html", logins=q("select * from logins order by id desc limit 300").fetchall(),
                            failed=q("select count(*) from logins where not ok and at > ?", since).fetchone()[0])
+
+
+
+# --- admin: booking requests and the FCIAC sync ---
+
+@app.route("/admin/bookings", methods=["GET", "POST"])
+def admin_bookings():
+    if request.method == "POST":
+        if request.form.get("action") == "sync":
+            fciac.sync_now()
+            flash("Checking the FCIAC schedule now. It can take a few minutes; reload this page to see when it's done.")
+            return redirect(request.path)
+        b = q("select * from bookings where id = ?", request.form.get("id", type=int)).fetchone() or abort(404)
+        status = {"accept": "accepted", "decline": "declined", "reopen": "pending"}.get(request.form.get("action")) or abort(400)
+        q("update bookings set status = ?, reply = ?, decided = ? where id = ?",
+          status, request.form.get("reply", b["reply"]).strip()[:1000], now() if status != "pending" else None, b["id"])
+        flash(f"{b['name']}'s request is now {status}. They see this on their status page.")
+        return redirect(request.path)
+    today = local_today().isoformat()
+    pending = q(BOOKINGS + " where b.status = 'pending' order by g.date, g.sort").fetchall()
+    accepted = q(BOOKINGS + " where b.status = 'accepted' and g.date >= ? order by g.date, g.sort", today).fetchall()
+    booked_days = {}
+    for b in accepted:
+        booked_days.setdefault(b["date"], []).append(b)
+    past = q(BOOKINGS + " where b.status in ('declined', 'canceled') or (b.status = 'accepted' and g.date < ?)"
+             " order by g.date desc limit 50", today).fetchall()
+    s = settings()
+    return render_template("admin_bookings.html", pending=pending, accepted=accepted, past=past, booked_days=booked_days,
+                           sync=s, games=q("select count(*) from games where not gone").fetchone()[0])
 
 
 if __name__ == "__main__":

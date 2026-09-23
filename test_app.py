@@ -1,13 +1,19 @@
 """Smoke test: .venv\\Scripts\\python test_app.py  (uses a throwaway data dir)"""
+import atexit
 import io
 import os
+import shutil
 import sqlite3
 import tempfile
+from datetime import timedelta
 
-os.environ.update(DATA_DIR=tempfile.mkdtemp(), ADMIN_PASSWORD="pw")
+DATA_DIR = tempfile.mkdtemp()
+atexit.register(shutil.rmtree, DATA_DIR, ignore_errors=True)
+os.environ.update(DATA_DIR=DATA_DIR, ADMIN_PASSWORD="pw", FCIAC_SYNC="0")  # no network in tests
 from PIL import Image  # noqa: E402
 
 import app as site  # noqa: E402
+import fciac  # noqa: E402
 
 c = site.app.test_client()
 db = sqlite3.connect(site.DB)
@@ -64,6 +70,11 @@ assert c.post("/admin/upload", data={"title": "", "section_id": sports, "photo":
 assert c.post("/admin/upload", data={"title": "X", "section_id": 999, "photo": (io.BytesIO(raw), "x.jpg")}).status_code == 400
 other = c.post("/admin/upload", data={"title": "Scrimmage", "section_id": sports, "date": "2026-09-01",
                                       "photo": (io.BytesIO(raw), "a.jpg")}).json["gallery_id"]
+r = c.post("/admin/upload", headers={"Accept": "text/html"}, data={"gallery_id": other, "photo": [  # no script: all at once
+    (io.BytesIO(raw), "b.jpg"), (io.BytesIO(b"no"), "c.heic"), (io.BytesIO(raw), "d.jpg")]})
+assert r.status_code == 302 and r.headers["Location"].endswith(f"/admin/g/{other}")
+assert db.execute("select count(*) from photos where gallery_id = ?", (other,)).fetchone()[0] == 3
+assert "Skipped c.heic" in text(c.get(f"/admin/g/{other}"))
 
 pid, file = db.execute("select id, file from photos order by id").fetchone()
 assert c.get(f"/media/full/{file}").data == raw
@@ -135,6 +146,74 @@ sam.post("/admin/accounts", data={"action": "delete", "id": admin_id})
 assert c.get("/admin").status_code == 302  # deleted account is signed out
 sam.post("/admin/logout")
 assert sam.get("/admin").status_code == 302
+
+# --- FCIAC calendar: sync keeps FCIAC games, booking requests go pending -> accepted
+def master(*rows):  # a CIAC master schedule page with these (date, time, type, home, away, site) rows
+    cells = "".join("<tr>" + "".join(f'<td id="x">{c}</td>' for c in (f"{d:%m/%d/%Y}", *r)) + "</tr>" for d, *r in rows)
+    return f"<table><tr><th>GameDate</th><th>Time</th></tr>{cells}</table>"
+
+
+today = site.local_today()
+soon, later, gone_day = today + timedelta(days=2), today + timedelta(days=3), today - timedelta(days=5)
+page = master((soon, "4:00 PM", "League", "Darien", "Greenwich", "Darien High School - Stadium"),
+              (soon, "12:01 AM", "Non-League", "Staples", "Hamden", "Staples - Field"),
+              (soon, "Postponed", "League", "Wilton", "Trumbull", "Wilton - Turf"),
+              (later, "1:00 PM", "League", "Cheshire", "Hamden", "not FCIAC"),
+              (later, "10:00 AM", "League", "Darien", "Ridgefield", "DH game 1"),
+              (later, "1:00 PM", "League", "Darien", "Ridgefield", "DH game 2"),
+              (gone_day, "4:00 PM", "League", "Norwalk", "Stamford &amp; Co", "past"))
+assert fciac.sync_sport(db, 3, page) == 6  # Cheshire vs Hamden isn't FCIAC; the doubleheader stays two games
+games = {r[0]: r for r in db.execute("select site, time, sort, sport from games")}
+assert games["Staples - Field"][1] == "TBA" and games["Darien High School - Stadium"][2] == "16:00"
+assert games["past"][3] == "Field Hockey" and fciac.called_off("Postponed") and not fciac.called_off("TBA")
+game_id = db.execute("select id from games where site like 'Darien High%'").fetchone()[0]
+past_id = db.execute("select id from games where site = 'past'").fetchone()[0]
+
+cal = text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}"))
+assert "Greenwich at Darien" in cal and "Hamden at Staples" in cal and f'/calendar/game/{game_id}"' in cal
+assert "Wilton" in cal and "Book LSS Photos" in cal
+assert "Greenwich at Darien" not in text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}&f=1&layer=fciac&school=Wilton"))
+assert "Greenwich at Darien" not in text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}&f=1&layer=lss"))  # nothing booked yet
+
+visitor = site.app.test_client()
+visitor.environ_base["REMOTE_ADDR"] = "10.1.1.1"
+form = {"name": "Pat Parent", "email": "pat@example.com", "phone": "", "note": "#12, goalie"}
+assert visitor.post(f"/calendar/game/{game_id}", data={**form, "email": ""}).status_code == 400  # needs a way to reply
+assert visitor.post(f"/calendar/game/{game_id}", data={**form, "website": "spam"}).status_code == 400  # honeypot
+assert "already been played" in text(visitor.post(f"/calendar/game/{past_id}", data=form))
+r = visitor.post(f"/calendar/game/{game_id}", data=form)
+assert r.status_code == 302 and r.headers["Location"].startswith("/booking/")
+status_url = r.headers["Location"]
+assert "Waiting for a reply" in text(visitor.get(status_url)) and "#12, goalie" in text(visitor.get(status_url))
+assert "Requested, waiting for a reply" in text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}"))
+booking_id = db.execute("select id from bookings").fetchone()[0]
+for _ in range(site.MAX_REQUESTS):
+    visitor.post(f"/calendar/game/{game_id}", data=form)
+assert "Too many requests" in text(visitor.post(f"/calendar/game/{game_id}", data=form))
+db.execute("delete from bookings where id != ?", (booking_id,))
+db.commit()
+
+sam.post("/admin/login", data={"username": "sam", "password": "mine1234"})  # admin was deleted above
+admin_page = text(sam.get("/admin/bookings"))
+assert "Pat Parent" in admin_page and "mailto:pat@example.com" in admin_page and '<span class="count"' in admin_page
+sam.post("/admin/bookings", data={"id": booking_id, "action": "accept", "reply": "See you on the home sideline"})
+status = text(visitor.get(status_url))
+assert "Accepted: LSS Photos will be there" in status and "See you on the home sideline" in status
+only_lss = text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}&f=1&layer=lss"))
+assert "Greenwich at Darien" in only_lss and "LSS Photos will be there" in only_lss and "Hamden at Staples" not in only_lss
+assert "will be there" not in text(c.get(f"/calendar?m={soon:%Y-%m}&d={soon}&f=1&layer=fciac"))  # schedule layer alone
+
+fciac.sync_sport(db, 3, master((later, "10:00 AM", "League", "Darien", "Ridgefield", "DH game 1")))  # games dropped
+assert db.execute("select gone from games where id = ?", (game_id,)).fetchone()[0] == 1  # booked: kept, marked gone
+assert not db.execute("select 1 from games where site = 'Staples - Field'").fetchone()  # unbooked: deleted
+assert "no longer on the FCIAC schedule" in text(visitor.get(status_url))
+visitor.post(status_url)
+assert "You canceled this request" in text(visitor.get(status_url))
+
+fciac.fetch = lambda sid: (_ for _ in ()).throw(OSError("timed out")) if sid == 7 else page
+fciac.sync_all(site.DB, sports=[7, 3])
+assert "Boys Soccer: timed out" in dict(db.execute("select key, value from settings"))["sync_error"]
+assert "Boys Soccer: timed out" in text(sam.get("/admin/bookings"))
 
 # --- CSRF guard, then real deletes
 sam.post("/admin/login", data={"username": "sam", "password": "mine1234"})
