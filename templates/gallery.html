@@ -36,13 +36,13 @@
   <div id="lb-bar">
     <span id="lb-count"></span>
     <button class="icon-btn" id="lb-share" aria-label="Share link to this photo"><svg class="i"><use href="#share"/></svg></button>
-    <a class="icon-btn" id="lb-dl" aria-label="Download full size" download><svg class="i"><use href="#download"/></svg></a>
+    <a class="icon-btn" id="lb-dl" aria-label="Save full size photo" download><svg class="i"><use href="#download"/></svg></a>
     <button class="icon-btn" id="lb-close" aria-label="Close"><svg class="i"><use href="#x"/></svg></button>
   </div>
   <button class="icon-btn" id="lb-prev" aria-label="Previous photo"><svg class="i"><use href="#chevron-left"/></svg></button>
   <img id="lb-img" alt="">
   <button class="icon-btn" id="lb-next" aria-label="Next photo"><svg class="i"><use href="#chevron-right"/></svg></button>
-  <div id="toast" role="status">Link copied</div>
+  <div id="toast" role="status"></div>
 </dialog>
 
 <script>
@@ -50,6 +50,10 @@ const links = [...document.querySelectorAll('.grid a')];
 const $ = id => document.getElementById(id);
 const lb = $('lb'), img = $('lb-img');
 let i = 0, x0 = 0;
+// iPhone/iPad Safari saves downloads to the Files app; its share sheet has "Save Image", which puts
+// the photo in Photos. (iPadOS reports itself as a Mac, so check for touch too.)
+const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+let file, blobUrl;  // the current photo as a File (null while loading, false if it can't be shared), fetched ahead so the share sheet opens straight from the tap
 
 function show(n) {
   i = (n + links.length) % links.length;
@@ -57,9 +61,18 @@ function show(n) {
   img.src = thumb.src;  // thumbnail is already cached: show it instantly...
   img.alt = thumb.alt;
   full.onload = () => { if (links[i] === a) img.src = full.src; };  // ...then swap in the full-size original
-  full.src = a.href;
   $('lb-dl').href = a.href;
   $('lb-dl').download = a.dataset.name;
+  file = null;
+  if (ios && navigator.canShare) {  // one download serves both the viewer and the save button
+    fetch(a.href).then(r => r.ok ? r.blob() : Promise.reject()).then(b => {
+      if (links[i] !== a) return;
+      const f = new File([b], a.dataset.name, {type: b.type});
+      file = navigator.canShare({files: [f]}) && f;
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      full.src = blobUrl = URL.createObjectURL(b);
+    }).catch(() => { if (links[i] === a) file = false; full.src = a.href; });
+  } else full.src = a.href;
   $('lb-count').textContent = `${i + 1} / ${links.length}`;
   history.replaceState(null, '', '?photo=' + a.dataset.id);
   if (!lb.open) lb.showModal();
@@ -80,11 +93,21 @@ lb.ontouchend = e => {
   const dx = e.changedTouches[0].clientX - x0;
   if (Math.abs(dx) > 50) show(dx < 0 ? i + 1 : i - 1);
 };
+function toast(text) {
+  $('toast').textContent = text;
+  $('toast').classList.add('on');
+  setTimeout(() => $('toast').classList.remove('on'), 2000);
+}
 $('lb-share').onclick = async () => {
   if (navigator.share) return navigator.share({title: document.title, url: location.href}).catch(() => {});
   try { await navigator.clipboard.writeText(location.href); } catch { return prompt('Copy this link:', location.href); }
-  $('toast').classList.add('on');
-  setTimeout(() => $('toast').classList.remove('on'), 2000);
+  toast('Link copied');
+};
+$('lb-dl').onclick = e => {
+  if (!ios || !navigator.canShare || file === false) return;  // everywhere else a normal download is what people expect
+  e.preventDefault();
+  if (!file) return toast('Getting the photo ready, tap again in a moment');
+  navigator.share({files: [file]}).catch(() => {});
 };
 
 const shared = links.findIndex(a => a.dataset.id === new URLSearchParams(location.search).get('photo'));
