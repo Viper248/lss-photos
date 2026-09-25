@@ -25,21 +25,65 @@
 
 {% block script %}
 <script>
+// One request per photo: progress, and no giant uploads. Over the internet the Cloudflare tunnel drops a
+// connection now and then, so a photo that fails that way is sent again (the key stops it being saved twice).
 const up = document.getElementById('up'), msg = document.getElementById('msg');
+const PARALLEL = 3, RETRY_AFTER = [2, 5, 10, 20, 30, 60];  // seconds
+const wait = s => new Promise(r => setTimeout(r, s * 1000));
+const key = () => [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
+let busy = false, gid;
+
+async function keepAwake() {  // phones stop the upload when the screen locks; the lock is lost when the tab is hidden
+  try { if (busy && document.visibilityState === 'visible') await navigator.wakeLock.request('screen'); } catch {}
+}
+document.addEventListener('visibilitychange', keepAwake);
+addEventListener('beforeunload', e => { if (busy) e.preventDefault(); });
+
+async function send(file) {  // -> null once saved, else {file, why, again: worth another try later}
+  const fd = new FormData(up), k = key();
+  let r;
+  for (const delay of [...RETRY_AFTER, null]) {
+    while (!navigator.onLine) await wait(2);
+    fd.set('photo', file); fd.set('key', k); fd.set('gallery_id', gid || '');
+    r = await fetch(up.action, {method: 'POST', body: fd}).catch(() => null);
+    if (r && r.ok) { gid = (await r.json()).gallery_id; return null; }
+    if (r && r.status !== 408 && r.status !== 429 && r.status < 500) break;  // the site said no: retrying won't help
+    if (delay !== null) await wait(delay);
+  }
+  const t = r ? await r.text().catch(() => '') : '';
+  const why = t && t.length < 300 && !t.includes('<') ? t  // our own plain message (not a Cloudflare error page)
+    : `${file.name}: ${!r ? 'no connection' : r.status === 413 ? 'too big to send over the internet (100 MB limit)' : `the site answered ${r.status}`}`;
+  return {file, why, again: !r || r.status >= 500 || r.status === 408 || r.status === 429};
+}
+
+async function upload(files) {
+  const queue = [...files], failed = [];
+  let done = 0;
+  const status = () => msg.textContent = `Uploaded ${done} of ${files.length}${failed.length ? `, ${failed.length} failed` : ''}…`;
+  const next = async () => {
+    const f = await send(queue.shift());
+    f ? failed.push(f) : done++;
+    status();
+  };
+  status();
+  while (!gid && queue.length) await next();  // a new gallery is made by its first photo, so that one goes alone
+  await Promise.all(Array.from({length: PARALLEL}, async () => { while (queue.length) await next(); }));
+  return failed;
+}
+
 up.onsubmit = async e => {
   e.preventDefault();
-  const fd = new FormData(up), files = fd.getAll('photo'), failed = [];
+  const fd = new FormData(up);
   if (!fd.get('gallery_id') && !fd.get('title').trim()) return alert('Give the new gallery a title.');
   up.querySelector('button').disabled = true;
-  for (const [n, file] of files.entries()) {  // one request per photo: progress, and no giant uploads
-    msg.textContent = `Uploading ${n + 1} of ${files.length}…`;
-    fd.set('photo', file);
-    const r = await fetch(up.action, {method: 'POST', body: fd}).catch(() => null);
-    if (r && r.ok) fd.set('gallery_id', (await r.json()).gallery_id);
-    else failed.push(r ? await r.text() : `${file.name}: network error`);
-  }
-  if (failed.length) alert('Some photos were not uploaded:\n\n' + failed.join('\n'));
-  location = fd.get('gallery_id') ? '/admin/g/' + fd.get('gallery_id') : '/admin';
+  busy = true; keepAwake();
+  gid = fd.get('gallery_id');
+  let failed = await upload(fd.getAll('photo'));
+  while (failed.some(f => f.again) && confirm(`${failed.length} photo(s) were not uploaded:\n\n${failed.map(f => f.why).join('\n')}\n\nTry the ones that lost the connection again?`))
+    failed = [...failed.filter(f => !f.again), ...await upload(failed.filter(f => f.again).map(f => f.file))];
+  if (failed.length && !failed.some(f => f.again)) alert('Some photos were not uploaded:\n\n' + failed.map(f => f.why).join('\n'));
+  busy = false;
+  location = gid ? '/admin/g/' + gid : '/admin';
 };
 </script>
 {% endblock %}

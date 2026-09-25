@@ -5,7 +5,9 @@ services:
     image: python:3.12-slim
     working_dir: /app
     # trusted-proxy flags: links built behind the tunnel say https://. Body limit 5 GB (buffered on the 27 GB system disk): big batches on your network
-    command: sh -c "pip install -q -r requirements.txt && waitress-serve --port=8080 --max-request-body-size=5368709120 --trusted-proxy='*' --trusted-proxy-headers=x-forwarded-proto app:app"
+    # Connection limit: cloudflared keeps up to 100 idle connections open to the site, which filled waitress's default of 100
+    # and it stopped answering (uploads through the tunnel failed). 8 threads: uploads and visitors don't queue behind each other.
+    command: sh -c "pip install -q -r requirements.txt && waitress-serve --port=8080 --threads=8 --connection-limit=1000 --max-request-body-size=5368709120 --trusted-proxy='*' --trusted-proxy-headers=x-forwarded-proto app:app"
     environment:
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}"
     volumes:

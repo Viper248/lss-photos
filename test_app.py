@@ -65,6 +65,16 @@ assert r.status_code == 200, r.data
 gid = r.json["gallery_id"]
 r = c.post("/admin/upload", data={"gallery_id": gid, "photo": (io.BytesIO(raw), "IMG_2.jpg")})
 assert r.json["gallery_id"] == gid
+k = "ab" * 16  # a retry whose first try was saved (only the reply was lost) isn't saved twice
+before = db.execute("select count(*) from photos").fetchone()[0]
+for _ in range(2):
+    assert c.post("/admin/upload", data={"gallery_id": gid, "key": k, "photo": (io.BytesIO(raw), "IMG_3.jpg")}).json["gallery_id"] == gid
+assert db.execute("select count(*) from photos").fetchone()[0] == before + 1
+k = "cd" * 16  # same for the photo that makes a new gallery: the retry doesn't make a second gallery
+new = [c.post("/admin/upload", data={"title": "Retry", "section_id": sports, "key": k,
+                                     "photo": (io.BytesIO(raw), "r.jpg")}).json["gallery_id"] for _ in range(2)]
+assert new[0] == new[1] and db.execute("select count(*) from galleries where title = 'Retry'").fetchone()[0] == 1
+assert c.post(f"/admin/g/{new[0]}", data={"action": "delete"}).status_code == 302
 assert c.post("/admin/upload", data={"gallery_id": gid, "photo": (io.BytesIO(b"no"), "a.heic")}).status_code == 400
 assert c.post("/admin/upload", data={"title": "", "section_id": sports, "photo": (io.BytesIO(raw), "x.jpg")}).status_code == 400
 assert c.post("/admin/upload", data={"title": "X", "section_id": 999, "photo": (io.BytesIO(raw), "x.jpg")}).status_code == 400

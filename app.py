@@ -490,6 +490,12 @@ def upload():  # the upload page's script sends one photo per request; without i
     gid, bad = request.form.get("gallery_id", type=int), []
     if gid:
         q("select 1 from galleries where id = ?", gid).fetchone() or abort(404)
+    # The script retries a photo when the connection drops, and names each one; a retry of a photo that did get
+    # saved (the reply was what got lost) is answered from the database instead of being saved twice.
+    key = request.form.get("key", "")
+    key = key if re.fullmatch(r"[0-9a-f]{32}", key) and len(request.files.getlist("photo")) == 1 else None
+    if key and (done := q("select gallery_id from photos where file like ?", key + ".%").fetchone()):
+        return {"gallery_id": done[0]}
     for f in request.files.getlist("photo"):
         photo = read_photo(f)
         if not photo:
@@ -499,7 +505,7 @@ def upload():  # the upload page's script sends one photo per request; without i
         if not gid:
             gid = q("insert into galleries (title, section_id, date, description) values (?, ?, ?, ?)",
                     *gallery_fields()).lastrowid
-        name = uuid.uuid4().hex + ext
+        name = (key or uuid.uuid4().hex) + ext
         (MEDIA / "full" / name).write_bytes(data)
         thumb.save(MEDIA / "thumb" / name, quality=82, icc_profile=thumb.info.get("icc_profile"))
         q("insert into photos (gallery_id, file, name, w, h) values (?, ?, ?, ?, ?)",
