@@ -15,6 +15,7 @@
     {% if gal.section %}<span><a class="link" href="{{ url_for('home') }}#s{{ gal.top_id }}">{{ gal.section }}</a>{% if gal.sub %} › {{ gal.sub }}{% endif %}</span>{% endif %}
     {% if gal.date %}<span><svg class="i"><use href="#calendar"/></svg>{{ gal.date|nice_date }}</span>{% endif %}
     <span><svg class="i"><use href="#images"/></svg>{{ gal.n }} photo{{ 's' if gal.n != 1 }}</span>
+    <span><svg class="i"><use href="#eye"/></svg>{{ "{:,}".format(views) }} view{{ 's' if views != 1 }}</span>
   </p>
   {% if gal.description %}<p class="desc">{{ gal.description }}</p>{% endif %}
   <div class="bar"></div>
@@ -22,7 +23,7 @@
   {% if photos %}
   <div class="grid">
     {% for p in photos %}
-    <a href="/media/full/{{ p.file }}" data-id="{{ p.id }}" data-name="{{ p.name }}" style="--r: {{ p.w / p.h }}">
+    <a href="/media/full/{{ p.file }}" data-id="{{ p.id }}" data-name="{{ p.name }}" data-views="{{ p.views }}" style="--r: {{ p.w / p.h }}">
       <img src="/media/thumb/{{ p.file }}" width="{{ p.w }}" height="{{ p.h }}" alt="{{ gal.title }} - Photo {{ loop.index }}" loading="lazy">
     </a>
     {% endfor %}
@@ -35,6 +36,7 @@
 <dialog id="lb" aria-label="Photo viewer">
   <div id="lb-bar">
     <span id="lb-count"></span>
+    <span id="lb-views"><svg class="i"><use href="#eye"/></svg><span></span></span>
     <button class="icon-btn" id="lb-share" aria-label="Share link to this photo"><svg class="i"><use href="#share"/></svg></button>
     <a class="icon-btn" id="lb-dl" aria-label="Save full size photo" download><svg class="i"><use href="#download"/></svg></a>
     <button class="icon-btn" id="lb-close" aria-label="Close"><svg class="i"><use href="#x"/></svg></button>
@@ -54,6 +56,7 @@ let i = 0, x0 = 0;
 // the photo in Photos. (iPadOS reports itself as a Mac, so check for touch too.)
 const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const seen = new Set();  // photos already counted as viewed on this visit
+const counted = {{ counted|tojson }};  // false for logged-in admins: their views aren't added
 let file, blobUrl;  // the current photo as a File (null while loading, false if it can't be shared), fetched ahead so the share sheet opens straight from the tap
 
 function show(n) {
@@ -77,7 +80,10 @@ function show(n) {
   if (!seen.has(a.dataset.id)) {
     seen.add(a.dataset.id);
     navigator.sendBeacon?.('/viewed/' + a.dataset.id);
+    if (counted) a.dataset.views = +a.dataset.views + 1;  // include this view, as the gallery count does
   }
+  const views = +a.dataset.views;
+  $('lb-views').lastChild.textContent = `${views.toLocaleString('en-US')} view${views === 1 ? '' : 's'}`;
   $('lb-count').textContent = `${i + 1} / ${links.length}`;
   history.replaceState(null, '', '?photo=' + a.dataset.id);
   if (!lb.open) lb.showModal();

@@ -119,6 +119,9 @@ assert db.execute("select photo_id, n from views order by photo_id").fetchall() 
 views = text(c.get("/admin/views"))
 assert "Game!" in views and "1 view<" in views and f"/g/{gid}?photo={pid}" in views
 assert "2 gallery views" in text(c.get(f"/admin/g/{gid}"))
+page = text(visitor.get(f"/g/{gid}"))  # counts shown publicly, including this visit
+assert "3 views</span>" in page and f'data-id="{pid}" data-name="IMG_1.jpg" data-views="1"' in page
+assert "const counted = true;" in page and "const counted = false;" in text(c.get(f"/g/{gid}"))
 assert 'href="/admin/views" aria-current="page"' in views
 
 # --- sections: add, rename, reorder, delete (only when empty)

@@ -24,7 +24,8 @@ Photos, the database and the login-cookie key live in `data/`, which is not in g
 - **Views**: how many times visitors opened each gallery page and each photo in the viewer: today, last 7 and
   30 days, all time, per gallery, and the most viewed photos. A photo counts once per visit. Views while logged in,
   search engines and link previews (when a link is pasted into a text or post) aren't counted. Each gallery's
-  edit page shows its totals and each photo's count.
+  edit page shows its totals and each photo's count. Visitors see the all-time counts too: on the gallery page
+  (next to the number of photos) and on each photo in the viewer.
 - **Bookings**: requests waiting (the tab shows how many), games and private events, with accept / decline and an
   optional note; warns when you're already booked or busy that day. "Days you're busy": block a day (or a run of
   days) with a private note, and open it again. Also shows when the schedule was last read, with "Check now".

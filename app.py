@@ -203,9 +203,12 @@ def home():
 def gallery(gid):
     gal = q(GALLERIES + " where g.id = ?", gid).fetchone() or abort(404)
     count_view(gid)
-    photos = q("select * from photos where gallery_id = ? order by id", gid).fetchall()
+    photos = q("select p.*, coalesce((select sum(n) from views where photo_id = p.id), 0) as views from photos p"
+               " where gallery_id = ? order by id", gid).fetchall()
+    views = q("select coalesce(sum(n), 0) from views where gallery_id = ? and photo_id = 0", gid).fetchone()[0]
     shared = next((p for p in photos if p["id"] == request.args.get("photo", type=int)), None)
-    return render_template("gallery.html", gal=gal, photos=photos, og_image=shared["file"] if shared else gal["cover"])
+    return render_template("gallery.html", gal=gal, photos=photos, views=views, counted=counts_views(),
+                           og_image=shared["file"] if shared else gal["cover"])
 
 
 @app.post("/viewed/<int:pid>")
@@ -216,10 +219,14 @@ def photo_viewed(pid):  # the photo viewer sends this the first time it shows ea
     return "", 204
 
 
+def counts_views():
+    """Logged-in admins, search engines and link previews (texts, social posts) don't add views."""
+    return not session.get("uid") and not BOTS.search(request.headers.get("User-Agent") or "bot")
+
+
 def count_view(gid, pid=0):
-    """One view of a gallery page (pid 0) or of a photo in the viewer, counted per day. Logged-in admins,
-    search engines and link previews (texts, social posts) don't count."""
-    if session.get("uid") or BOTS.search(request.headers.get("User-Agent") or "bot"):
+    """One view of a gallery page (pid 0) or of a photo in the viewer, counted per day."""
+    if not counts_views():
         return
     q("insert into views (day, gallery_id, photo_id, n) values (?, ?, ?, 1) on conflict do update set n = n + 1",
       local_today().isoformat(), gid, pid)
