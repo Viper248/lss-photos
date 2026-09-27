@@ -55,7 +55,7 @@ let i = 0, x0 = 0;
 // iPhone/iPad Safari saves downloads to the Files app; its share sheet has "Save Image", which puts
 // the photo in Photos. (iPadOS reports itself as a Mac, so check for touch too.)
 const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-const seen = new Set();  // photos already counted as viewed on this visit
+const seen = new Set(), saved = new Set();  // photos already counted as viewed / saved on this visit
 const counted = {{ counted|tojson }};  // false for logged-in admins: their views aren't added
 let file, blobUrl;  // the current photo as a File (null while loading, false if it can't be shared), fetched ahead so the share sheet opens straight from the tap
 
@@ -114,11 +114,17 @@ $('lb-share').onclick = async () => {
   try { await navigator.clipboard.writeText(location.href); } catch { return prompt('Copy this link:', location.href); }
   toast('Link copied');
 };
+function countSave(id) {
+  if (saved.has(id)) return;
+  saved.add(id);
+  navigator.sendBeacon?.('/saved/' + id);
+}
 $('lb-dl').onclick = e => {
-  if (!ios || !navigator.canShare || file === false) return;  // everywhere else a normal download is what people expect
+  const id = links[i].dataset.id;
+  if (!ios || !navigator.canShare || file === false) return countSave(id);  // everywhere else a normal download is what people expect
   e.preventDefault();
   if (!file) return toast('Getting the photo ready, tap again in a moment');
-  navigator.share({files: [file]}).catch(() => {});
+  navigator.share({files: [file]}).then(() => countSave(id)).catch(() => {});  // not counted if they close the share sheet
 };
 
 const shared = links.findIndex(a => a.dataset.id === new URLSearchParams(location.search).get('photo'));

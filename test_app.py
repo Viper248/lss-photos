@@ -122,6 +122,12 @@ assert "2 gallery views" in text(c.get(f"/admin/g/{gid}"))
 page = text(visitor.get(f"/g/{gid}"))  # counts shown publicly, including this visit
 assert "3 views</span>" in page and f'data-id="{pid}" data-name="IMG_1.jpg" data-views="1"' in page
 assert "const counted = true;" in page and "const counted = false;" in text(c.get(f"/g/{gid}"))
+assert visitor.post(f"/saved/{pid}").status_code == 204  # saves: counted separately, not as views
+c.post(f"/saved/{pid}")
+assert db.execute("select sum(n), sum(saves) from views where photo_id = ?", (pid,)).fetchone() == (1, 1)
+views = text(c.get("/admin/views"))
+assert "Most saved photos" in views and "1 save<" in views and "No saves yet" not in views
+assert "1 save<" in text(c.get(f"/admin/g/{gid}"))
 assert 'href="/admin/views" aria-current="page"' in views
 
 # --- sections: add, rename, reorder, delete (only when empty)

@@ -1,15 +1,16 @@
 {% extends "admin_base.html" %}
-{% block title %}Views | Admin | {{ SITE }}{% endblock %}
+{% block title %}Views and saves | Admin | {{ SITE }}{% endblock %}
 {% block admin %}
-<h1>Views</h1>
-<p class="meta"><span>Gallery views: a gallery page was opened. Photo views: a photo was opened in the viewer (once per visit).</span>
-  <span>Your own views while logged in, search engines and link previews aren't counted.</span></p>
+<h1>Views and saves</h1>
+<p class="meta"><span>Gallery views: a gallery page was opened. Photo views: a photo was opened in the viewer (once per visit).
+  Saves: the save button in the viewer was used (once per photo per visit; on iPhone and iPad, once they pick where it goes).</span>
+  <span>Your own views and saves while logged in, search engines and link previews aren't counted.</span></p>
 <div class="bar"></div>
 
 {% set zero = {'today': 0, 'week': 0, 'month': 0, 'total': 0} %}
 <table class="table views">
   <tr><th></th><th>Today</th><th>Last 7 days</th><th class="hide-sm">Last 30 days</th><th>All time</th></tr>
-  {% for kind, label in [('pages', 'Gallery views'), ('photos', 'Photo views')] %}
+  {% for kind, label in [('pages', 'Gallery views'), ('photos', 'Photo views'), ('saves', 'Saves')] %}
   {% set t = totals.get(kind, zero) %}
   <tr><td class="fg">{{ label }}</td><td>{{ t.today }}</td><td>{{ t.week }}</td><td class="hide-sm">{{ t.month }}</td><td class="fg">{{ t.total }}</td></tr>
   {% endfor %}
@@ -18,7 +19,7 @@
 <h2 class="sub">By gallery</h2>
 {% if galleries %}
 <table class="table views">
-  <tr><th class="thumb hide-sm"></th><th>Gallery</th><th>Gallery views</th><th class="hide-sm">Last 7 days</th><th>Photo views</th><th class="hide-sm">Last 7 days</th></tr>
+  <tr><th class="thumb hide-sm"></th><th>Gallery</th><th>Gallery views</th><th class="hide-sm">Last 7 days</th><th>Photo views</th><th class="hide-sm">Last 7 days</th><th>Saves</th><th class="hide-sm">Last 7 days</th></tr>
   {% for gal in galleries %}
   <tr>
     <td class="thumb hide-sm">{% if gal.cover %}<img src="/media/thumb/{{ gal.cover }}" alt="">{% endif %}</td>
@@ -27,6 +28,8 @@
     <td class="hide-sm">{{ gal.pages_week }}</td>
     <td class="fg">{{ gal.photos }}</td>
     <td class="hide-sm">{{ gal.photos_week }}</td>
+    <td class="fg">{{ gal.saves }}</td>
+    <td class="hide-sm">{{ gal.saves_week }}</td>
   </tr>
   {% endfor %}
 </table>
@@ -41,11 +44,26 @@
   <a class="tile" href="{{ url_for('gallery', gid=p.gallery_id, photo=p.id) }}" title="{{ p.title }}: {{ p.name }}">
     <img src="/media/thumb/{{ p.file }}" alt="{{ p.name }}" loading="lazy">
     <span class="badge left">{{ p.total }} view{{ 's' if p.total != 1 }}</span>
-    <span class="caption">{{ p.title }}<br>{{ p.week }} in the last 7 days</span>
+    <span class="caption">{{ p.title }}<br>{{ p.week }} in the last 7 days{% if p.saves %} · {{ p.saves }} save{{ 's' if p.saves != 1 }}{% endif %}</span>
   </a>
   {% endfor %}
 </div>
 {% else %}
 <p class="none">No photo views yet.</p>
+{% endif %}
+
+<h2 class="sub">Most saved photos</h2>
+{% if most_saved %}
+<div class="tiles">
+  {% for p in most_saved %}
+  <a class="tile" href="{{ url_for('gallery', gid=p.gallery_id, photo=p.id) }}" title="{{ p.title }}: {{ p.name }}">
+    <img src="/media/thumb/{{ p.file }}" alt="{{ p.name }}" loading="lazy">
+    <span class="badge left">{{ p.saves }} save{{ 's' if p.saves != 1 }}</span>
+    <span class="caption">{{ p.title }}<br>{{ p.total }} view{{ 's' if p.total != 1 }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="none">No saves yet.</p>
 {% endif %}
 {% endblock %}
