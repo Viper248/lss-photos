@@ -105,6 +105,22 @@ assert "Sports Galleries</a> › Baseball" in page
 r = c.post(f"/admin/g/{gid}", data={"title": "Game!", "section_id": section("Other Galleries"), "date": "2026-09-14"})
 assert r.headers["Location"] == f"/admin/g/{gid}"  # relative, so https survives a proxy
 
+# --- views: gallery pages and photos opened by visitors, not admins or link previews
+visitor = site.app.test_client()
+for _ in range(2):
+    visitor.get(f"/g/{gid}")
+visitor.get(f"/g/{gid}", headers={"User-Agent": "facebookexternalhit/1.1 Facebot Twitterbot/1.0"})
+c.get(f"/g/{gid}")  # logged-in admin
+assert visitor.post(f"/viewed/{pid}").status_code == 204
+visitor.post(f"/viewed/{pid}", headers={"Sec-Fetch-Site": "cross-site"})
+visitor.post("/viewed/99999")
+c.post(f"/viewed/{pid}")
+assert db.execute("select photo_id, n from views order by photo_id").fetchall() == [(0, 2), (pid, 1)]
+views = text(c.get("/admin/views"))
+assert "Game!" in views and "1 view<" in views and f"/g/{gid}?photo={pid}" in views
+assert "2 gallery views" in text(c.get(f"/admin/g/{gid}"))
+assert 'href="/admin/views" aria-current="page"' in views
+
 # --- sections: add, rename, reorder, delete (only when empty)
 c.post("/admin/sections", data={"action": "add", "name": "Portraits", "eyebrow": "People"})
 portraits = section("Portraits")

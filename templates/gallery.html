@@ -53,6 +53,7 @@ let i = 0, x0 = 0;
 // iPhone/iPad Safari saves downloads to the Files app; its share sheet has "Save Image", which puts
 // the photo in Photos. (iPadOS reports itself as a Mac, so check for touch too.)
 const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+const seen = new Set();  // photos already counted as viewed on this visit
 let file, blobUrl;  // the current photo as a File (null while loading, false if it can't be shared), fetched ahead so the share sheet opens straight from the tap
 
 function show(n) {
@@ -73,6 +74,10 @@ function show(n) {
       full.src = blobUrl = URL.createObjectURL(b);
     }).catch(() => { if (links[i] === a) file = false; full.src = a.href; });
   } else full.src = a.href;
+  if (!seen.has(a.dataset.id)) {
+    seen.add(a.dataset.id);
+    navigator.sendBeacon?.('/viewed/' + a.dataset.id);
+  }
   $('lb-count').textContent = `${i + 1} / ${links.length}`;
   history.replaceState(null, '', '?photo=' + a.dataset.id);
   if (!lb.open) lb.showModal();

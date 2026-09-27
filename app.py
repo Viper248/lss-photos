@@ -41,6 +41,7 @@ MAX_REQUESTS = 5  # booking requests per IP per hour (games and private events t
 MAX_BUSY_DAYS = 90  # one "busy from ... to" entry in admin
 LOCAL = ZoneInfo("America/New_York")  # game times on the CIAC site are local
 EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+BOTS = re.compile(r"bot|crawl|spider|slurp|preview|facebookexternalhit|whatsapp|curl|wget|python|headless", re.I)
 DATA = Path(os.environ.get("DATA_DIR") or Path(__file__).parent / "data")
 MEDIA, DB = DATA / "media", DATA / "gallery.db"
 
@@ -72,6 +73,8 @@ create table if not exists bookings (id integer primary key, game_id integer not
     created text not null, decided text);
 create index if not exists bookings_by_game on bookings (game_id);
 create table if not exists busy_days (date text primary key, note text not null default '');
+create table if not exists views (day text not null, gallery_id integer not null, photo_id integer not null,
+    n integer not null, primary key (day, gallery_id, photo_id)) without rowid;
 """)
 con.execute("begin")  # the one-time setup below happens all at once or not at all
 if not con.execute("select 1 from sections").fetchone():
@@ -199,9 +202,27 @@ def home():
 @app.get("/g/<int:gid>")
 def gallery(gid):
     gal = q(GALLERIES + " where g.id = ?", gid).fetchone() or abort(404)
+    count_view(gid)
     photos = q("select * from photos where gallery_id = ? order by id", gid).fetchall()
     shared = next((p for p in photos if p["id"] == request.args.get("photo", type=int)), None)
     return render_template("gallery.html", gal=gal, photos=photos, og_image=shared["file"] if shared else gal["cover"])
+
+
+@app.post("/viewed/<int:pid>")
+def photo_viewed(pid):  # the photo viewer sends this the first time it shows each photo on a visit
+    p = q("select gallery_id from photos where id = ?", pid).fetchone()
+    if p and request.headers.get("Sec-Fetch-Site", "same-origin") == "same-origin":  # not from other sites
+        count_view(p["gallery_id"], pid)
+    return "", 204
+
+
+def count_view(gid, pid=0):
+    """One view of a gallery page (pid 0) or of a photo in the viewer, counted per day. Logged-in admins,
+    search engines and link previews (texts, social posts) don't count."""
+    if session.get("uid") or BOTS.search(request.headers.get("User-Agent") or "bot"):
+        return
+    q("insert into views (day, gallery_id, photo_id, n) values (?, ?, ?, 1) on conflict do update set n = n + 1",
+      local_today().isoformat(), gid, pid)
 
 
 @app.get("/media/<path:path>")
@@ -530,14 +551,18 @@ def admin_gallery(gid):
             files = [r["file"] for r in q("select file from photos where gallery_id = ?", gid)]
             q("delete from photos where gallery_id = ?", gid)
             q("delete from galleries where id = ?", gid)
+            q("delete from views where gallery_id = ?", gid)
             delete_files(*files)
             flash(f"Deleted {gal['title']}.")
             return redirect(url_for("admin"))
         q("update galleries set title = ?, section_id = ?, date = ?, description = ? where id = ?", *gallery_fields(), gid)
         flash("Saved.")
         return redirect(request.path)  # relative: stays on https behind a tunnel/proxy
-    photos = q("select * from photos where gallery_id = ? order by id", gid).fetchall()
-    return render_template("admin_gallery.html", gal=gal, photos=photos, sections=sections())
+    photos = q("select p.*, (select sum(n) from views where photo_id = p.id) as views from photos p"
+               " where gallery_id = ? order by id", gid).fetchall()
+    views = q("select sum(iif(photo_id, 0, n)), sum(iif(photo_id, n, 0)) from views where gallery_id = ?", gid).fetchone()
+    return render_template("admin_gallery.html", gal=gal, photos=photos, sections=sections(),
+                           page_views=views[0] or 0, photo_views=views[1] or 0)
 
 
 @app.post("/admin/photo/<int:pid>")
@@ -545,6 +570,7 @@ def admin_photo(pid):
     p = q("select * from photos where id = ?", pid).fetchone() or abort(404)
     if request.form.get("action") == "delete":
         q("delete from photos where id = ?", pid)
+        q("delete from views where photo_id = ?", pid)
         delete_files(p["file"])
     else:
         q("update galleries set cover_id = ? where id = ?", pid, p["gallery_id"])
@@ -683,6 +709,26 @@ def admin_logins():
     return render_template("admin_logins.html", logins=q("select * from logins order by id desc limit 300").fetchall(),
                            failed=q("select count(*) from logins where not ok and at > ?", since).fetchone()[0])
 
+
+# --- admin: views ---
+
+@app.get("/admin/views")
+def admin_views():
+    today = local_today()
+    days = [today.isoformat(), (today - timedelta(days=6)).isoformat(), (today - timedelta(days=29)).isoformat()]
+    periods = "sum(iif(day = ?, n, 0)) as today, sum(iif(day >= ?, n, 0)) as week, sum(iif(day >= ?, n, 0)) as month, sum(n) as total"
+    totals = {r["kind"]: r for r in q(f"select iif(photo_id, 'photos', 'pages') as kind, {periods} from views group by kind", *days)}
+    per_gallery = {r["gallery_id"]: r for r in q(
+        "select gallery_id, sum(iif(photo_id, 0, n)) as pages, sum(iif(photo_id = 0 and day >= ?, n, 0)) as pages_week,"
+        " sum(iif(photo_id, n, 0)) as photos, sum(iif(photo_id and day >= ?, n, 0)) as photos_week"
+        " from views group by gallery_id", days[1], days[1])}
+    zero = dict(pages=0, pages_week=0, photos=0, photos_week=0)
+    galleries = sorted((dict(gal, **(per_gallery.get(gal["id"]) or zero)) for gal in q(GALLERIES + NEWEST)),
+                       key=lambda gal: (-gal["pages"], -gal["photos"]))  # newest first among ties
+    top = q("select p.*, g.title, sum(v.n) as total, sum(iif(v.day >= ?, v.n, 0)) as week from views v"
+            " join photos p on p.id = v.photo_id join galleries g on g.id = p.gallery_id"
+            " group by p.id order by total desc, p.id limit 24", days[1]).fetchall()
+    return render_template("admin_views.html", totals=totals, galleries=galleries, top=top)
 
 
 # --- admin: booking requests and the FCIAC sync ---
