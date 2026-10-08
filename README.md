@@ -112,4 +112,5 @@ tunnel token.
   without a User-Agent; if the error says this server's IP is blocked, contact CIAC support.
 - **502 from Cloudflare** means the `gallery` container isn't running, or the hostname's service isn't `HTTP` → `gallery:8080`.
 - **Deleted photos** can stay in Cloudflare's cache for a while. To remove one right away: Caching → Purge Cache → its URL.
-- Cloudflare's free plan limits each upload request to 100 MB. That's fine: the admin page uploads one photo per request.
+- Cloudflare's free plan limits each upload request to 100 MB. That's fine: the admin page uploads one photo per request. If a browser
+  sends a whole batch at once instead, upload on your network (`http://<zimablade-ip>:8080/admin/upload`): up to 9 GB.
