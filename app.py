@@ -169,9 +169,12 @@ def settings():
 
 
 def carousel_photo():
-    """The photo picked in Admin -> Carousel spot (with its gallery's title), or None. Deleting it unpicks it."""
-    return q("select p.*, g.title from photos p join galleries g on g.id = p.gallery_id"
-             " join settings s on s.key = 'carousel_photo' and p.id = cast(s.value as integer)").fetchone()
+    """The photo picked in Admin -> Carousel spot, or None (deleting the photo unpicks it). With its gallery's title,
+    and x, y: the point of it kept in view however the home page crops it, in percent from the left and top."""
+    return q("select p.*, g.title, coalesce(x.value, 50.0) as x, coalesce(y.value, 50.0) as y from photos p"
+             " join galleries g on g.id = p.gallery_id"
+             " join settings s on s.key = 'carousel_photo' and p.id = cast(s.value as integer)"
+             " left join settings x on x.key = 'carousel_x' left join settings y on y.key = 'carousel_y'").fetchone()
 
 
 def link_href(key, value):
@@ -646,12 +649,19 @@ def admin_sections():
 @app.route("/admin/carousel", methods=["GET", "POST"])
 def admin_carousel():
     if request.method == "POST":
-        pid = request.form.get("photo_id", type=int)
-        if not pid:
+        f, action = request.form, request.form.get("action")
+        if action == "remove":
             q("delete from settings where key = 'carousel_photo'")
             flash("Removed. The front page shows the newest gallery's cover again.")
             return redirect(request.path)
-        p = q("select * from photos where id = ?", pid).fetchone() or abort(404)
+        if action == "position":  # dragged in the previews
+            for key in ("x", "y"):
+                v = round(max(0, min(100, f.get(key, 50.0, type=float))), 1)  # in this order NaN comes out as 100
+                q("insert into settings (key, value) values (?, ?) on conflict (key) do update set value = excluded.value",
+                  "carousel_" + key, f"{v:g}")
+            flash("Position saved. The front page keeps that part of the photo in view.")
+            return redirect(request.path)
+        p = q("select * from photos where id = ?", f.get("photo_id", type=int)).fetchone() or abort(404)
         img = Image.open(MEDIA / "full" / p["file"])
         img.thumbnail((HERO_PX, HERO_PX))
         img = ImageOps.exif_transpose(img)
@@ -659,9 +669,10 @@ def admin_carousel():
         for old in (MEDIA / "hero").iterdir():  # only the current pick needs a copy
             if old.name != p["file"]:
                 old.unlink()
+        q("delete from settings where key in ('carousel_x', 'carousel_y')")  # a new photo starts centered
         q("insert into settings (key, value) values ('carousel_photo', ?)"
-          " on conflict (key) do update set value = excluded.value", str(pid))
-        flash("Saved. This photo is now behind the title on the front page.")
+          " on conflict (key) do update set value = excluded.value", str(p["id"]))
+        flash("Saved. This photo is now behind the title on the front page. Drag the previews to adjust what shows.")
         return redirect(url_for("admin_carousel", g=p["gallery_id"]))
     current, galleries = carousel_photo(), q(GALLERIES + NEWEST).fetchall()
     gid = request.args.get("g", type=int) or (current["gallery_id"] if current else galleries[0]["id"] if galleries else None)

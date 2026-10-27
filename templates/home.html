@@ -2,7 +2,7 @@
 {% block body %}
 {% if carousel %}{% set hero = "/media/hero/" ~ carousel.file %}{# picked in Admin -> Carousel spot #}
 {% elif galleries and galleries[0].cover %}{% set hero = "/media/thumb/" ~ galleries[0].cover %}{% endif %}
-<section class="hero"{% if hero %} style="--img: url('{{ hero }}')"{% endif %}>
+<section class="hero"{% if hero %} style="--img: url('{{ hero }}'){% if carousel %}; --pos: {{ carousel.x }}% {{ carousel.y }}%{% endif %}"{% endif %}>
   <h1>{{ SITE }}</h1>
   <div class="bar"></div>
   <svg class="i chev" aria-hidden="true"><use href="#chevron-down"/></svg>

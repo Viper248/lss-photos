@@ -110,15 +110,22 @@ assert site.app.test_client().post("/admin/carousel", data={"photo_id": spot_pid
 assert c.post("/admin/carousel", data={"photo_id": 99999}).status_code == 404
 r = c.post("/admin/carousel", data={"photo_id": spot_pid})
 assert r.status_code == 302 and r.headers["Location"].endswith(f"/admin/carousel?g={other}")
-assert f"--img: url('/media/hero/{spot}')" in text(c.get("/"))
+assert f"--img: url('/media/hero/{spot}'); --pos: 50.0% 50.0%" in text(c.get("/"))
 assert Image.open(io.BytesIO(c.get(f"/media/hero/{spot}").data)).size == (1600, 2400)  # rotated like the thumbnail
 picker = text(c.get(f"/admin/carousel?g={other}"))
 assert "Scrimmage</a>" in picker and picker.count('class="badge">Carousel spot') == 1 and f"/media/hero/{spot}" in picker
+assert 'data-w="533" data-h="800"' in picker  # the photo's shape, for dragging it in the previews
 assert f"thumb/{file}" in text(c.get(f"/admin/carousel?g={gid}"))  # another gallery's photos to pick from
+c.post("/admin/carousel", data={"action": "position", "x": "30", "y": "72.26"})  # dragged in the previews
+assert "--pos: 30% 72.3%" in text(c.get("/")) and 'name="y" value="72.3"' in text(c.get("/admin/carousel"))
+c.post("/admin/carousel", data={"action": "position", "x": "nan", "y": "junk"})
+assert "--pos: 100% 50%" in text(c.get("/"))  # always a valid CSS position
 c.post("/admin/carousel", data={"photo_id": pid})
 assert not (site.MEDIA / "hero" / spot).exists() and (site.MEDIA / "hero" / file).exists()  # only the pick has a copy
-c.post("/admin/carousel", data={"photo_id": ""})
-assert f"--img: url('/media/thumb/{file}')" in text(c.get("/")) and "None picked yet" in text(c.get("/admin/carousel"))
+assert "--pos: 50.0% 50.0%" in text(c.get("/"))  # a new pick starts centered
+c.post("/admin/carousel", data={"action": "remove"})
+home = text(c.get("/"))
+assert f"--img: url('/media/thumb/{file}')" in home and "--pos" not in home and "None picked yet" in text(c.get("/admin/carousel"))
 c.post("/admin/carousel", data={"photo_id": pid})  # deleting this photo further down unpicks it
 
 r = c.post(f"/admin/g/{gid}", data={"title": "Game!", "section_id": section("Other Galleries"), "date": "2026-09-14"})
