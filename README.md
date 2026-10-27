@@ -31,6 +31,8 @@ Photos, the database and the login-cookie key live in `data/`, which is not in g
   optional note; warns when you're already booked or busy that day. "Days you're busy": block a day (or a run of
   days) with a private note, and open it again. Also shows when the schedule was last read, with "Check now".
 - **Upload**: new gallery or more photos for an existing one
+- **Carousel spot**: pick the photo behind the big title at the top of the front page, from any gallery, with a
+  preview of how it looks on a computer and on a phone. Without one, the front page uses the newest gallery's cover.
 - **Sections**: add, rename, reorder and delete the home-page headings (Sports Galleries, My Adventures…)
   and their subsections (Baseball, Field Hockey…). Visitors filter a heading's galleries by subsection.
   A section can only be deleted once it's empty.

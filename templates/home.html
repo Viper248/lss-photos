@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block body %}
-<section class="hero"{% if galleries and galleries[0].cover %} style="--img: url('/media/thumb/{{ galleries[0].cover }}')"{% endif %}>
+{% if carousel %}{% set hero = "/media/hero/" ~ carousel.file %}{# picked in Admin -> Carousel spot #}
+{% elif galleries and galleries[0].cover %}{% set hero = "/media/thumb/" ~ galleries[0].cover %}{% endif %}
+<section class="hero"{% if hero %} style="--img: url('{{ hero }}')"{% endif %}>
   <h1>{{ SITE }}</h1>
   <div class="bar"></div>
   <svg class="i chev" aria-hidden="true"><use href="#chevron-down"/></svg>

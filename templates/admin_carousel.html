@@ -1,0 +1,48 @@
+{% extends "admin_base.html" %}
+{% block title %}Carousel spot | Admin | {{ SITE }}{% endblock %}
+{% block admin %}
+<h1>Carousel spot</h1>
+<p class="desc">The photo behind the {{ SITE }} title at the top of the front page. Pick one from any gallery below.
+  {% if not current %}None picked yet, so the front page shows the cover of the newest gallery.{% endif %}</p>
+<div class="bar"></div>
+
+{% if current %}
+<div class="previews" style="--img: url('/media/hero/{{ current.file }}')">
+  <figure><div class="hero-preview"><b>{{ SITE }}</b><span class="bar"></span></div><figcaption>On a computer</figcaption></figure>
+  <figure><div class="hero-preview tall"><b>{{ SITE }}</b><span class="bar"></span></div><figcaption>On a phone</figcaption></figure>
+</div>
+<form class="row" method="post">
+  <span>{{ current.name }} from <a class="link fg" href="{{ url_for('admin_gallery', gid=current.gallery_id) }}">{{ current.title }}</a></span>
+  <button class="btn ghost" name="photo_id" value="" data-confirm="Take this photo off the front page?">Remove</button>
+</form>
+{% endif %}
+
+<h2 class="sub">Pick a photo</h2>
+{% if galleries %}
+<form id="pick" class="row" method="get">
+  <label>Gallery <select name="g">
+    {% for gal in galleries %}<option value="{{ gal.id }}"{{ ' selected' if gal.id == gid }}>{{ gal.title }}{{ ' (' ~ gal.date|nice_date ~ ')' if gal.date }}</option>{% endfor %}
+  </select></label>
+  <noscript><button class="btn ghost">Show photos</button></noscript>
+</form>
+<div class="tiles">
+  {% for p in photos %}
+  <form class="tile" method="post">
+    <img src="/media/thumb/{{ p.file }}" alt="{{ p.name }}" loading="lazy">
+    {% if current and p.id == current.id %}<span class="badge">Carousel spot</span>{% endif %}
+    <button class="wide" name="photo_id" value="{{ p.id }}">Use this photo</button>
+  </form>
+  {% else %}
+  <p class="none">This gallery has no photos yet.</p>
+  {% endfor %}
+</div>
+{% else %}
+<p class="none">No galleries yet. <a class="link gold" href="{{ url_for('upload_page') }}">Upload some photos</a> first.</p>
+{% endif %}
+{% endblock %}
+{% block script %}
+<script>
+const pick = document.getElementById('pick');
+if (pick) pick.onchange = () => pick.submit();  // show the chosen gallery's photos
+</script>
+{% endblock %}

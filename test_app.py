@@ -102,6 +102,25 @@ page = text(c.get(f"/g/{gid}?photo={pid}"))
 assert f'href="/media/full/{file}"' in page and 'data-name="IMG_1.jpg"' in page and f"thumb/{file}" in page
 assert "Sports Galleries</a> › Baseball" in page
 
+# --- carousel spot: the photo behind the home page's title; picking it makes a 2400px copy for the background
+assert f"--img: url('/media/thumb/{file}')" in home  # none picked: the newest gallery's cover
+assert "None picked yet" in text(c.get("/admin/carousel"))
+spot_pid, spot = db.execute("select id, file from photos where gallery_id = ? order by id", (other,)).fetchone()
+assert site.app.test_client().post("/admin/carousel", data={"photo_id": spot_pid}).status_code == 401
+assert c.post("/admin/carousel", data={"photo_id": 99999}).status_code == 404
+r = c.post("/admin/carousel", data={"photo_id": spot_pid})
+assert r.status_code == 302 and r.headers["Location"].endswith(f"/admin/carousel?g={other}")
+assert f"--img: url('/media/hero/{spot}')" in text(c.get("/"))
+assert Image.open(io.BytesIO(c.get(f"/media/hero/{spot}").data)).size == (1600, 2400)  # rotated like the thumbnail
+picker = text(c.get(f"/admin/carousel?g={other}"))
+assert "Scrimmage</a>" in picker and picker.count('class="badge">Carousel spot') == 1 and f"/media/hero/{spot}" in picker
+assert f"thumb/{file}" in text(c.get(f"/admin/carousel?g={gid}"))  # another gallery's photos to pick from
+c.post("/admin/carousel", data={"photo_id": pid})
+assert not (site.MEDIA / "hero" / spot).exists() and (site.MEDIA / "hero" / file).exists()  # only the pick has a copy
+c.post("/admin/carousel", data={"photo_id": ""})
+assert f"--img: url('/media/thumb/{file}')" in text(c.get("/")) and "None picked yet" in text(c.get("/admin/carousel"))
+c.post("/admin/carousel", data={"photo_id": pid})  # deleting this photo further down unpicks it
+
 r = c.post(f"/admin/g/{gid}", data={"title": "Game!", "section_id": section("Other Galleries"), "date": "2026-09-14"})
 assert r.headers["Location"] == f"/admin/g/{gid}"  # relative, so https survives a proxy
 
@@ -348,6 +367,7 @@ sam.post("/admin/login", data={"username": "sam", "password": "mine1234"})
 assert sam.post(f"/admin/photo/{pid}", headers={"Sec-Fetch-Site": "cross-site"}, data={"action": "delete"}).status_code == 403
 sam.post(f"/admin/photo/{pid}", data={"action": "delete"})
 assert not (site.MEDIA / "full" / file).exists() and not (site.MEDIA / "thumb" / file).exists()
+assert not (site.MEDIA / "hero" / file).exists() and "/media/hero/" not in text(c.get("/"))  # was the carousel spot
 sam.post(f"/admin/g/{gid}", data={"action": "delete"})
 sam.post(f"/admin/g/{other}", data={"action": "delete"})
 assert c.get(f"/g/{gid}").status_code == 404 and not any((site.MEDIA / "full").iterdir())

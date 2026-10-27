@@ -36,6 +36,7 @@ LINKS = {  # key: (label, placeholder, what a bare handle is appended to); shown
 }
 FORMATS = {"JPEG": ".jpg", "MPO": ".jpg", "PNG": ".png", "WEBP": ".webp"}
 THUMB_PX = 800  # long edge; sharp in the grid on retina screens, ~100 KB each
+HERO_PX = 2400  # long edge of the carousel spot's copy (full width on the home page): sharp, a fraction of the original
 MAX_FAILS, FAIL_WINDOW = 10, timedelta(minutes=15)  # per IP, then logins are refused for a while
 MAX_REQUESTS = 5  # booking requests per IP per hour (games and private events together)
 MAX_BUSY_DAYS = 90  # one "busy from ... to" entry in admin
@@ -45,7 +46,7 @@ BOTS = re.compile(r"bot|crawl|spider|slurp|preview|facebookexternalhit|whatsapp|
 DATA = Path(os.environ.get("DATA_DIR") or Path(__file__).parent / "data")
 MEDIA, DB = DATA / "media", DATA / "gallery.db"
 
-for d in ("full", "thumb"):
+for d in ("full", "thumb", "hero"):
     (MEDIA / d).mkdir(parents=True, exist_ok=True)
 con = sqlite3.connect(DB, isolation_level=None)
 con.executescript("""
@@ -167,6 +168,12 @@ def settings():
     return {r["key"]: r["value"] for r in q("select * from settings")}
 
 
+def carousel_photo():
+    """The photo picked in Admin -> Carousel spot (with its gallery's title), or None. Deleting it unpicks it."""
+    return q("select p.*, g.title from photos p join galleries g on g.id = p.gallery_id"
+             " join settings s on s.key = 'carousel_photo' and p.id = cast(s.value as integer)").fetchone()
+
+
 def link_href(key, value):
     if key == "email":
         return "mailto:" + value
@@ -198,7 +205,8 @@ def device(agent):
 
 @app.get("/")
 def home():
-    return render_template("home.html", galleries=q(GALLERIES + NEWEST).fetchall(), sections=sections())
+    return render_template("home.html", galleries=q(GALLERIES + NEWEST).fetchall(), sections=sections(),
+                           carousel=carousel_photo())
 
 
 @app.get("/g/<int:gid>")
@@ -488,7 +496,7 @@ def gallery_fields():
 
 def delete_files(*names):
     for name in names:
-        for d in ("full", "thumb"):
+        for d in ("full", "thumb", "hero"):
             (MEDIA / d / name).unlink(missing_ok=True)
 
 
@@ -631,6 +639,34 @@ def admin_sections():
             q("delete from sections where id = ?", s["id"])
             flash(f"Deleted {s['name']}.")
     return redirect(request.path)
+
+
+# --- admin: carousel spot (the photo behind the title at the top of the home page) ---
+
+@app.route("/admin/carousel", methods=["GET", "POST"])
+def admin_carousel():
+    if request.method == "POST":
+        pid = request.form.get("photo_id", type=int)
+        if not pid:
+            q("delete from settings where key = 'carousel_photo'")
+            flash("Removed. The front page shows the newest gallery's cover again.")
+            return redirect(request.path)
+        p = q("select * from photos where id = ?", pid).fetchone() or abort(404)
+        img = Image.open(MEDIA / "full" / p["file"])
+        img.thumbnail((HERO_PX, HERO_PX))
+        img = ImageOps.exif_transpose(img)
+        img.save(MEDIA / "hero" / p["file"], quality=82, icc_profile=img.info.get("icc_profile"))
+        for old in (MEDIA / "hero").iterdir():  # only the current pick needs a copy
+            if old.name != p["file"]:
+                old.unlink()
+        q("insert into settings (key, value) values ('carousel_photo', ?)"
+          " on conflict (key) do update set value = excluded.value", str(pid))
+        flash("Saved. This photo is now behind the title on the front page.")
+        return redirect(url_for("admin_carousel", g=p["gallery_id"]))
+    current, galleries = carousel_photo(), q(GALLERIES + NEWEST).fetchall()
+    gid = request.args.get("g", type=int) or (current["gallery_id"] if current else galleries[0]["id"] if galleries else None)
+    return render_template("admin_carousel.html", current=current, galleries=galleries, gid=gid,
+                           photos=q("select * from photos where gallery_id = ? order by id", gid).fetchall())
 
 
 # --- admin: contact and social links ---
